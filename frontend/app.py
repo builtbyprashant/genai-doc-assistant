@@ -28,9 +28,15 @@ st.markdown(
       header[data-testid="stHeader"] {display: none;}
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
-      /* the hidden header used to reserve ~6rem at the top — reclaim that space */
-      .block-container {padding-top: 2rem !important;}
-      section[data-testid="stSidebar"] .block-container {padding-top: 1.5rem !important;}
+
+      /* Compact the layout: reclaim the hidden-header space and tighten the
+         vertical rhythm so the first screen fits without scrolling. */
+      .block-container {padding-top: 1.2rem !important; padding-bottom: 1rem !important;}
+      section[data-testid="stSidebar"] .block-container {padding-top: 1.2rem !important;}
+      [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
+      hr {margin: 0.4rem 0 !important;}                            /* dividers */
+      h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
+      h2, h3 {margin: 0.4rem 0 0.2rem 0 !important;}
     </style>
     """,
     unsafe_allow_html=True,
