@@ -40,22 +40,24 @@ def run_pipeline(
     include_chunks: bool = False,
     include_trace: bool = False,
     agent_mode: str = "custom",
+    top_k_override: int | None = None,
     store=None,
 ) -> dict:
     """Entry point. Raises SafetyError / FilterNotFoundError for 4xx cases."""
     settings = get_settings()
     store = store if store is not None else get_vector_store()
+    top_k = top_k_override or settings.top_k_retrieval
 
     safety.check(question)  # SafetyError → API 400
     started = time.perf_counter()
 
     if agent_mode == "compare":
-        return _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, started)
+        return _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, started)
 
     if agent_mode == "llama_index":
-        core = _llama_core(question, filter_filenames, store)
+        core = _llama_core(question, filter_filenames, store, top_k)
     else:
-        core = _custom_core(question, filter_filenames, store, settings)
+        core = _custom_core(question, filter_filenames, store, settings, top_k)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return _single_response(question, core, elapsed_ms, include_chunks, include_trace)
@@ -63,7 +65,7 @@ def run_pipeline(
 
 # ── custom pipeline ───────────────────────────────────────────────────────────
 
-def _custom_core(question, filter_filenames, store, settings) -> dict:
+def _custom_core(question, filter_filenames, store, settings, top_k) -> dict:
     trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.")]
 
     if store.chunk_count() == 0:
@@ -77,10 +79,10 @@ def _custom_core(question, filter_filenames, store, settings) -> dict:
     query = plan["rewritten_query"]
     trace.append(_step("PlannerAgent", "completed", {
         "intent": plan["intent"], "retrieval_strategy": plan["retrieval_strategy"],
-        "top_k": plan["top_k"], "rewritten_query": query,
+        "top_k": top_k, "rewritten_query": query,
     }))
 
-    retrieved = store.retrieve(query, top_k=settings.top_k_retrieval, filter_filenames=filter_filenames)
+    retrieved = store.retrieve(query, top_k=top_k, filter_filenames=filter_filenames)
     top_score = retrieved[0]["similarity_score"] if retrieved else 0.0
     passed = bool(retrieved) and top_score >= settings.similarity_threshold
     trace.append(_step("RetrieverAgent", "completed", {
@@ -127,7 +129,7 @@ def _custom_core(question, filter_filenames, store, settings) -> dict:
 
 # ── llama_index mode ──────────────────────────────────────────────────────────
 
-def _llama_core(question, filter_filenames, store) -> dict:
+def _llama_core(question, filter_filenames, store, top_k) -> dict:
     if store.chunk_count() == 0:
         trace = [_step("LlamaReAct", "skipped", "no_documents_indexed")]
         return _short_circuit("no_documents_indexed", trace,
@@ -135,7 +137,7 @@ def _llama_core(question, filter_filenames, store) -> dict:
 
     _check_filter(filter_filenames, store)
 
-    run = llama_agent.run_llama_agent(question, store, filter_filenames)
+    run = llama_agent.run_llama_agent(question, store, filter_filenames, top_k=top_k)
     return {
         "success": True, "short_circuit": False, "short_circuit_reason": None,
         "answer": run["answer"], "confidence": "n/a", "confidence_reason": "",
@@ -146,14 +148,14 @@ def _llama_core(question, filter_filenames, store) -> dict:
 
 # ── compare mode (C-E) ────────────────────────────────────────────────────────
 
-def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, started) -> dict:
+def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, started) -> dict:
     custom_started = time.perf_counter()
-    custom = _custom_core(question, filter_filenames, store, settings)
+    custom = _custom_core(question, filter_filenames, store, settings, top_k)
     custom_ms = int((time.perf_counter() - custom_started) * 1000)
 
     # The llama side runs regardless of whether custom short-circuited. (C-E)
     llama_started = time.perf_counter()
-    llama = _llama_core(question, filter_filenames, store)
+    llama = _llama_core(question, filter_filenames, store, top_k)
     llama_ms = int((time.perf_counter() - llama_started) * 1000)
 
     short_circuit = custom["short_circuit"]

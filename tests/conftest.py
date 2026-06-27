@@ -25,8 +25,13 @@ def _isolated_settings(monkeypatch, tmp_path):
     monkeypatch.setenv("LOG_LEVEL", "WARNING")  # keep test output quiet
 
     config.get_settings.cache_clear()
+    # The vector store is a cached singleton keyed on the persist path; clear it so
+    # each test gets a fresh store at its own temp directory.
+    from app.services.vector_store import get_vector_store
+    get_vector_store.cache_clear()
     yield
     config.get_settings.cache_clear()
+    get_vector_store.cache_clear()
 
 
 @pytest.fixture

@@ -23,10 +23,9 @@ your best FINAL answer and note the gap."""
 MAX_STEPS = 4
 
 
-def run_llama_agent(question: str, store, filter_filenames=None) -> dict:
+def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> dict:
     """Run the loop. Returns answer, sources_used, llm_calls, chunks, trace."""
-    settings = get_settings()
-    top_k = settings.top_k_retrieval
+    top_k = top_k or get_settings().top_k_retrieval
 
     seen: list[dict] = []
     seen_ids: set[str] = set()
