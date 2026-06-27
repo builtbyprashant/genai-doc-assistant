@@ -84,6 +84,18 @@ def fetch_documents() -> list[dict]:
         return []
 
 
+HEALTH_POLL_SECONDS = 30  # never poll /health more often than this
+
+
+@st.cache_data(ttl=HEALTH_POLL_SECONDS, show_spinner=False)
+def fetch_health() -> dict:
+    """Cached /health for the sidebar. Streamlit reruns on every interaction, so an
+    uncached call would hit the backend constantly; the TTL caps it at one call per
+    HEALTH_POLL_SECONDS (30s). Call `fetch_health.clear()` after an upload/delete to
+    refresh the stats immediately rather than waiting out the TTL."""
+    return api_get("/health").json()
+
+
 def detail_of(response: httpx.Response) -> str:
     """The human-readable RFC-7807 detail, never raw JSON."""
     try:
@@ -105,7 +117,7 @@ if "last_result" not in st.session_state:
 with st.sidebar:
     st.subheader("System status")
     try:
-        health = api_get("/health").json()
+        health = fetch_health()
         stats = health["stats"]
         dot = "🟢" if health["status"] == "ok" else "🔴"
         st.markdown(f"{dot} **System {health['status']}**")
@@ -142,6 +154,7 @@ with st.sidebar:
                 else:
                     st.error(f"✗ {res['filename']} — {res['error']['detail']}")
             st.session_state.documents = fetch_documents()
+            fetch_health.clear()  # doc count/chunks changed → refresh stats now
         else:
             st.error(detail_of(resp))
 
@@ -161,6 +174,7 @@ with st.sidebar:
                 if right.button("🗑", key=f"del_{doc['filename']}"):
                     httpx.delete(f"{BACKEND_URL}/documents/{doc['filename']}", timeout=REQUEST_TIMEOUT)
                     st.session_state.documents = fetch_documents()
+                    fetch_health.clear()  # doc count/chunks changed → refresh stats now
                     st.rerun()
 
 
