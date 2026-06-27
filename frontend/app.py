@@ -110,6 +110,10 @@ if "documents" not in st.session_state:
     st.session_state.documents = fetch_documents()
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
+if "query_in_progress" not in st.session_state:
+    st.session_state.query_in_progress = False
+if "pending_request" not in st.session_state:
+    st.session_state.pending_request = None
 
 
 # ── sidebar: document manager ─────────────────────────────────────────────────
@@ -210,22 +214,23 @@ with mode_col:
     mode = st.radio("Agent mode", ["custom", "llama_index", "compare"], horizontal=True,
                     help="custom = fixed 3-call pipeline · llama_index = ReAct loop · compare = both side by side")
 with ask_col:
-    ask_clicked = st.button("Ask", type="primary", disabled=not can_ask, use_container_width=True)
+    # Disabled while a request is in flight (and until it's processed/errored/lost),
+    # so rapid or queued double-clicks can't fire a second request.
+    ask_clicked = st.button("Ask", type="primary",
+                            disabled=not can_ask or st.session_state.query_in_progress,
+                            use_container_width=True)
 
-if ask_clicked:
-    req = {
+# On click: flag the request in-flight, stash it, and rerun so the actual work happens
+# on a pass where the Ask button renders disabled — a queued second click then lands on
+# a disabled button and is ignored.
+if ask_clicked and not st.session_state.query_in_progress:
+    st.session_state.query_in_progress = True
+    st.session_state.pending_request = {
         "question": question, "filter_filenames": selected, "agent_mode": mode,
         "include_chunks": True, "include_trace": True,
     }
-    if mode == "custom":
-        # Custom mode streams the answer token-by-token (handled just below).
-        st.session_state.pending_stream = req
-        st.session_state.last_result = None
-    else:
-        with st.spinner("Running agent pipeline..."):
-            resp = api_post("/query", json=req)
-        st.session_state.last_result = resp.json() if resp.status_code == 200 else {"_error": detail_of(resp)}
-        st.session_state.pending_stream = None
+    st.session_state.last_result = None
+    st.rerun()
 
 
 def _stream_answer(req: dict, holder: dict):
@@ -259,20 +264,38 @@ def _stream_answer(req: dict, holder: dict):
         holder["error"] = "Could not reach the backend."
 
 
-# Stream the custom-mode answer live, then rerun so the full result (caption +
-# diagnostics) renders through the same path as the batch modes.
-_pending = st.session_state.get("pending_stream")
-if _pending:
-    st.session_state.pending_stream = None
-    _holder = {"meta_raw": "", "error": None}
-    st.subheader("Answer")
-    st.write_stream(_stream_answer(_pending, _holder))
-    if _holder["error"]:
-        st.session_state.last_result = {"_error": _holder["error"]}
-    elif _holder["meta_raw"]:
-        st.session_state.last_result = json.loads(_holder["meta_raw"])
-    else:
-        st.session_state.last_result = {"_error": "The service returned an empty response."}
+# Process the in-flight request. This pass renders the Ask button disabled; it is
+# re-enabled in `finally` whether the request is processed, errored, or lost (the
+# frontend REQUEST_TIMEOUT covers the backend's full retry window). Custom mode streams
+# the answer; the others run batch. Then rerun so the final result (caption + diagnostics)
+# renders through the same path for every mode.
+_req = st.session_state.pending_request
+if _req:
+    st.session_state.pending_request = None
+    try:
+        if _req["agent_mode"] == "custom":
+            st.subheader("Answer")
+            _holder = {"meta_raw": "", "error": None}
+            st.write_stream(_stream_answer(_req, _holder))
+            if _holder["error"]:
+                st.session_state.last_result = {"_error": _holder["error"]}
+            elif _holder["meta_raw"]:
+                st.session_state.last_result = json.loads(_holder["meta_raw"])
+            else:
+                st.session_state.last_result = {"_error": "The service returned an empty response."}
+        else:
+            try:
+                with st.spinner("Running agent pipeline..."):
+                    resp = api_post("/query", json=_req)
+                st.session_state.last_result = (
+                    resp.json() if resp.status_code == 200 else {"_error": detail_of(resp)}
+                )
+            except httpx.HTTPError:
+                st.session_state.last_result = {
+                    "_error": "Could not reach the backend — the request timed out or was lost."
+                }
+    finally:
+        st.session_state.query_in_progress = False  # re-enable: processed / errored / lost
     st.rerun()
 
 
