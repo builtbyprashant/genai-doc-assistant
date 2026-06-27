@@ -462,3 +462,32 @@ def test_pipeline_stream_empty_store_short_circuits(monkeypatch, tmp_path):
     assert tokens == []  # nothing to stream when it short-circuits before the answer
     assert done["short_circuit"] is True
     assert done["short_circuit_reason"] == "no_documents_indexed"
+
+
+def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_store):
+    """The backend logs one structured per-query line carrying the per-step timings —
+    not just the uvicorn access line — and never the raw query (only its hash)."""
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    _set_threshold(monkeypatch, "0.0")
+
+    captured: dict = {}
+
+    def fake_info(msg, extra=None):
+        ctx = (extra or {}).get("context", {})
+        if ctx.get("event") == "query_completed":
+            captured.update(ctx)
+
+    monkeypatch.setattr(pipeline._logger, "info", fake_info)
+    pipeline.run_pipeline("When can ICU patients transfer?", agent_mode="custom",
+                          store=indexed_store, request_id="req-123")
+
+    assert captured["request_id"] == "req-123"
+    assert captured["mode"] == "custom"
+    assert captured["short_circuit"] is False
+    assert captured["llm_calls"] == 3
+    assert captured["query_hash"] == app_logging.hash_query("When can ICU patients transfer?")
+    assert "ICU" not in str(captured)  # raw query never logged, only the hash
+    assert set(captured["steps_ms"]) == {
+        "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
+        "RankerAgent", "ReasonerAgent", "ValidatorAgent",
+    }

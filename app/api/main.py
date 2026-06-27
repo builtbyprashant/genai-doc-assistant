@@ -227,6 +227,7 @@ def query(request: Request, body: QueryRequest):
         include_trace=body.include_trace,
         agent_mode=mode,
         top_k_override=body.top_k_override,
+        request_id=_request_id(request),
     )
     result["request_id"] = _request_id(request)
     result["timestamp"] = _now()
@@ -256,6 +257,7 @@ def query_stream(request: Request, body: QueryRequest):
         for kind, payload in run_pipeline_stream(
             body.question, filter_filenames=body.filter_filenames,
             agent_mode=mode, top_k_override=body.top_k_override, store=store,
+            request_id=request_id,
         ):
             if kind == "token":
                 yield payload

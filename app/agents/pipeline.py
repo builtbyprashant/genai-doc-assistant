@@ -18,6 +18,9 @@ import time
 from app.agents import llama_agent, llm, planner, ranker, reasoner, safety, validator
 from app.core.config import get_settings
 from app.services.vector_store import get_vector_store
+from app.utils.logging import get_logger, hash_query
+
+_logger = get_logger()
 
 _NEUTRAL_VALIDATION = {
     "is_valid": True, "issues": [], "hallucination_risk": "n/a", "suggested_action": "none",
@@ -42,6 +45,7 @@ def run_pipeline(
     agent_mode: str = "custom",
     top_k_override: int | None = None,
     store=None,
+    request_id: str | None = None,
 ) -> dict:
     """Entry point. Raises SafetyError / FilterNotFoundError for 4xx cases."""
     settings = get_settings()
@@ -55,7 +59,7 @@ def run_pipeline(
 
     if agent_mode == "compare":
         return _run_compare(question, filter_filenames, include_chunks, include_trace,
-                            store, settings, top_k, safety_ms, started)
+                            store, settings, top_k, safety_ms, started, request_id)
 
     if agent_mode == "llama_index":
         core = _llama_core(question, filter_filenames, store, top_k)
@@ -63,6 +67,8 @@ def run_pipeline(
         core = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
+    _log_completed(question, agent_mode, elapsed_ms, core["trace"], core["llm_calls"],
+                   core["short_circuit"], request_id)
     return _single_response(question, core, elapsed_ms, include_chunks, include_trace, agent_mode)
 
 
@@ -158,7 +164,7 @@ def _llama_core(question, filter_filenames, store, top_k) -> dict:
 
 # ── compare mode (C-E) ────────────────────────────────────────────────────────
 
-def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, safety_ms, started) -> dict:
+def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, safety_ms, started, request_id=None) -> dict:
     custom_started = time.perf_counter()
     custom = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
     custom_ms = int((time.perf_counter() - custom_started) * 1000)
@@ -179,9 +185,13 @@ def _run_compare(question, filter_filenames, include_chunks, include_trace, stor
     else:
         validation = custom["validation"]
 
+    total_ms = int((time.perf_counter() - started) * 1000)
+    _log_completed(question, "compare", total_ms, custom["trace"],
+                   custom["llm_calls"] + llama["llm_calls"], short_circuit, request_id,
+                   custom_ms=custom_ms, llama_ms=llama_ms)
     return {
         "mode": "compare",
-        "processing_time_ms": int((time.perf_counter() - started) * 1000),
+        "processing_time_ms": total_ms,
         "short_circuit": short_circuit,
         "question": question,
         "custom": _compare_side(custom, custom_ms, include_chunks, include_trace),
@@ -258,6 +268,24 @@ def _ms(start) -> int:
     return int((time.perf_counter() - start) * 1000)
 
 
+def _log_completed(question, mode, total_ms, trace, llm_calls, short_circuit,
+                   request_id=None, **extra) -> None:
+    """Emit one structured per-query log line so the logs carry the same per-step
+    timing the response trace does (otherwise the only backend log per query is the
+    uvicorn access line). The raw query is never logged — only its hash (PII-safe)."""
+    _logger.info("query_completed", extra={"context": {
+        "event": "query_completed",
+        "request_id": request_id,
+        "query_hash": hash_query(question),
+        "mode": mode,
+        "short_circuit": short_circuit,
+        "llm_calls": llm_calls,
+        "processing_time_ms": total_ms,
+        "steps_ms": {s["agent"]: s["duration_ms"] for s in trace},
+        **extra,
+    }})
+
+
 # ── streaming (custom mode) ───────────────────────────────────────────────────
 
 class _AnswerExtractor:
@@ -308,6 +336,7 @@ def run_pipeline_stream(
     agent_mode: str = "custom",
     top_k_override: int | None = None,
     store=None,
+    request_id: str | None = None,
 ):
     """Generator yielding ('token', text) for answer deltas then ('done', result).
 
@@ -326,23 +355,28 @@ def run_pipeline_stream(
     started = time.perf_counter()
 
     if agent_mode == "custom":
-        yield from _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms, started)
+        yield from _custom_stream(question, filter_filenames, store, settings, top_k,
+                                  safety_ms, started, request_id)
         return
 
     result = run_pipeline(
         question, filter_filenames=filter_filenames, include_chunks=True,
         include_trace=True, agent_mode=agent_mode, top_k_override=top_k_override, store=store,
+        request_id=request_id,
     )
     if result.get("answer"):
         yield ("token", result["answer"])
     yield ("done", result)
 
 
-def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms, started):
+def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms, started, request_id=None):
     trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.", safety_ms)]
 
     def done(core):
-        return ("done", _single_response(question, core, _ms(started), True, True, "custom"))
+        elapsed_ms = _ms(started)
+        _log_completed(question, "custom", elapsed_ms, core["trace"], core["llm_calls"],
+                       core["short_circuit"], request_id)
+        return ("done", _single_response(question, core, elapsed_ms, True, True, "custom"))
 
     if store.chunk_count() == 0:
         trace.append(_step("RetrieverAgent", "skipped", "no_documents_indexed"))
