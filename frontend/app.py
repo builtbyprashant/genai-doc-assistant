@@ -46,6 +46,19 @@ st.markdown(
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
       h2, h3 {margin: 0.4rem 0 0.2rem 0 !important;}
+
+      /* Shrink the in-sidebar collapse bar so content sits near the top. The collapse
+         and reopen controls keep working (verified); the spacer is an empty logo
+         placeholder we don't use, so its height goes to 0. */
+      [data-testid="stSidebar"] [data-testid="stLogoSpacer"] {height: 0 !important;}
+      [data-testid="stSidebar"] [data-testid="stSidebarHeader"] {min-height: 0 !important; height: auto !important; padding-top: 0.25rem !important; padding-bottom: 0 !important;}
+      [data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {padding-top: 0.25rem !important;}
+
+      /* Keep each indexed-document row on one line. In the narrow sidebar Streamlit
+         gives every column min-width:100% and wraps them, so the 🗑 button drops
+         below the filename. Force side-by-side instead. */
+      [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {flex-wrap: nowrap !important; gap: 0.25rem !important;}
+      [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {min-width: 0 !important;}
     </style>
     """,
     unsafe_allow_html=True,
