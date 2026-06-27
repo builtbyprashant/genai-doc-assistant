@@ -9,6 +9,7 @@ SDK directly. Keeping the call in one place means:
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import anthropic
@@ -44,3 +45,16 @@ def complete(system: str, user: str, max_tokens: int = 800, timeout: Optional[fl
         messages=[{"role": "user", "content": user}],
     )
     return response.content[0].text
+
+
+def extract_json(raw: str) -> dict:
+    """Pull the first JSON object out of a model response.
+
+    Models sometimes wrap JSON in prose or code fences, so we slice from the first
+    '{' to the last '}'. Raises ValueError if there is nothing parseable — callers
+    fall back to a safe default.
+    """
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("no JSON object found in response")
+    return json.loads(raw[start : end + 1])
