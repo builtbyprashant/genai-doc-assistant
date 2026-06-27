@@ -323,7 +323,7 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 
 ---
 
-## Roadmap
+## Roadmap (Future Version)
 
 - AWS deployment via Terraform (ECS, S3, ElastiCache)
 - Grafana observability via CloudWatch + Loki
