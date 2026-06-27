@@ -25,12 +25,22 @@ st.set_page_config(page_title="RAG Knowledge System", page_icon="🔍", layout="
 st.markdown(
     """
     <style>
-      header[data-testid="stHeader"] {display: none;}
+      /* Strip Streamlit's header chrome — but KEEP the header element, because the
+         collapsed-sidebar reopen button (stExpandSidebarButton, the ») lives inside
+         its toolbar. Hiding the whole header (display:none) left a collapsed sidebar
+         with no way to reopen. So: hide the Deploy button, the ⋮ menu, the status
+         widget and the rainbow bar; make the header transparent + click-through; and
+         keep the reopen button clickable. (Verified against the live DOM.) */
+      header[data-testid="stHeader"] {background: transparent !important; box-shadow: none !important; pointer-events: none !important;}
+      [data-testid="stToolbar"] [data-testid="stBaseButton-header"] {display: none !important;}  /* Deploy */
+      [data-testid="stMainMenuButton"] {display: none !important;}                                /* hamburger menu */
+      [data-testid="stStatusWidget"] {display: none !important;}                                  /* "Running..." indicator */
+      [data-testid="stDecoration"] {display: none !important;}                                    /* rainbow top bar */
+      [data-testid="stExpandSidebarButton"] {pointer-events: auto !important;}                    /* keep the reopen button clickable */
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
 
-      /* Compact main content + use more horizontal width. The sidebar header is left
-         at Streamlit defaults — tampering with it broke the collapse control. */
+      /* Compact main content + use more horizontal width. */
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
