@@ -23,7 +23,6 @@ from app.services.document_loader import (
     load_document,
 )
 
-
 # ── fixtures / builders ──────────────────────────────────────────────────────
 
 def _text_pdf(text: str = "Hello PDF World") -> bytes:

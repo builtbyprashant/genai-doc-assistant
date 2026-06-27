@@ -1,0 +1,19 @@
+# Tooling config only — the project installs from requirements.txt, not via build.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+exclude = [".venv", "venv", "genai-doc-assistant", "docs"]
+
+[tool.ruff.lint]
+# pycodestyle errors/warnings, pyflakes, import sorting. E501 (line length) is
+# left off — the lint gate is about real errors, not wrapping.
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/__init__.py", "app/*/__init__.py"]

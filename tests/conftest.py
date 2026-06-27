@@ -6,8 +6,6 @@ This file gives every test a clean, predictable environment to build on.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from app.core import config
