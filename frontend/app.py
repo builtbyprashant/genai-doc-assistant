@@ -34,8 +34,9 @@ st.markdown(
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
       /* Sidebar top space: the empty header bar (collapse arrow) + content padding.
          Selectors vary by Streamlit version, so target several. */
-      [data-testid="stSidebarHeader"] {padding-top: 0.4rem !important; padding-bottom: 0 !important;}
-      [data-testid="stSidebarUserContent"] {padding-top: 0 !important;}
+      [data-testid="stSidebarHeader"] {padding: 0.25rem 1rem 0 !important; min-height: 0 !important; height: auto !important;}
+      [data-testid="stSidebarUserContent"] {padding-top: 0.25rem !important;}
+      section[data-testid="stSidebar"] > div:first-child {padding-top: 0 !important;}
       section[data-testid="stSidebar"] .block-container {padding-top: 0.4rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
@@ -100,9 +101,9 @@ with st.sidebar:
         at_capacity = False
 
     st.divider()
-    st.subheader("Upload documents")
+    st.subheader("Documents")
     uploads = st.file_uploader(
-        "Drag and drop files",
+        "1. Select files",
         accept_multiple_files=True,
         type=["pdf", "txt", "md", "csv", "xlsx", "xls", "json", "yaml", "yml", "docx"],
     )
@@ -110,7 +111,8 @@ with st.sidebar:
 
     if at_capacity:
         st.warning("⚠️ Document limit reached. Delete a document to upload more.")
-    elif st.button("Upload", disabled=not uploads):
+    elif st.button(f"2. Index {len(uploads)} file(s)" if uploads else "2. Index files",
+                   disabled=not uploads, help="Chunks and embeds the selected files into the knowledge base."):
         files = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in uploads]
         with st.spinner("Indexing..."):
             resp = api_post("/documents/upload", files=files)
