@@ -150,7 +150,10 @@ with st.sidebar:
     if not docs:
         st.caption("No documents indexed yet. Upload one above to get started.")
     else:
-        with st.container(height=240, border=True):
+        # Let the box hug its content for a handful of docs — no clipping and no
+        # wasted space below it — and only cap + scroll once the list gets long.
+        box_height = "content" if len(docs) <= 4 else 360
+        with st.container(height=box_height, border=True):
             for doc in docs:
                 left, right = st.columns([4, 1])
                 left.markdown(f"📄 **{doc['filename']}**  \n{doc['chunks']} chunks")
