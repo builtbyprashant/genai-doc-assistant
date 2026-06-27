@@ -32,7 +32,7 @@ st.markdown(
       /* Compact + use more horizontal width; align the main area and the
          sidebar at the same top position. */
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
-      section[data-testid="stSidebar"] .block-container {padding-top: 0.6rem !important;}
+      section[data-testid="stSidebar"] .block-container {padding-top: 0.2rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
@@ -162,11 +162,15 @@ selected = st.multiselect(
 )
 st.caption(f"Searching: **{', '.join(selected) if selected else 'all documents'}**")
 
-mode = st.radio("Agent mode", ["custom", "llama_index", "compare"], horizontal=True,
-                help="custom = fixed 3-call pipeline · llama_index = ReAct loop · compare = both side by side")
-
 can_ask = bool(question.strip()) and len(question.strip()) >= 3 and documents
-if st.button("Ask", type="primary", disabled=not can_ask):
+mode_col, ask_col = st.columns([5, 1], vertical_alignment="bottom")
+with mode_col:
+    mode = st.radio("Agent mode", ["custom", "llama_index", "compare"], horizontal=True,
+                    help="custom = fixed 3-call pipeline · llama_index = ReAct loop · compare = both side by side")
+with ask_col:
+    ask_clicked = st.button("Ask", type="primary", disabled=not can_ask, use_container_width=True)
+
+if ask_clicked:
     with st.spinner("Running agent pipeline..."):
         resp = api_post("/query", json={
             "question": question,

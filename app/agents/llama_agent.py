@@ -22,6 +22,13 @@ On each turn reply with EXACTLY one action:
 Use only the provided context. If it is still insufficient after searching, give
 your best FINAL answer and note the gap."""
 
+# Used on the last turn to force a direct answer from what was gathered, rather
+# than exhausting the search budget and giving up.
+FINAL_SYNTHESIS_SYSTEM = (
+    "Answer the question using ONLY the provided context. Be direct and concise. "
+    "If the context genuinely does not contain the answer, say so briefly."
+)
+
 MAX_STEPS = 4
 
 
@@ -46,6 +53,21 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
     for step in range(1, MAX_STEPS + 1):
         context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
         t = time.perf_counter()
+
+        if step == MAX_STEPS:
+            # Out of search budget — force a direct answer from everything gathered
+            # instead of returning a "couldn't conclude" message.
+            raw = llm.complete(
+                FINAL_SYNTHESIS_SYSTEM,
+                f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\n"
+                "Answer the question directly using only this context.",
+                agent="LlamaReAct",
+            )
+            llm_calls += 1
+            answer = raw.strip()
+            trace.append(_step(step, "final", int((time.perf_counter() - t) * 1000)))
+            break
+
         raw = llm.complete(
             LLAMA_SYSTEM,
             f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:",
@@ -67,8 +89,9 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
         answer = raw.strip()
         trace.append(_step(step, "final", step_ms))
         break
-    else:
-        answer = answer or "Unable to reach a conclusion from the available documents."
+
+    if not answer:
+        answer = "Unable to reach a conclusion from the available documents."
 
     return {
         "answer": answer,

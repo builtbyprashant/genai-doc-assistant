@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents import llm, pipeline, planner, ranker, reasoner, safety, validator
+from app.agents import llama_agent, llm, pipeline, planner, ranker, reasoner, safety, validator
 from app.core import config, errors
 from app.services.vector_store import VectorStore
 from app.utils import logging as app_logging
@@ -290,6 +290,21 @@ def test_pipeline_trace_records_real_step_durations(monkeypatch, indexed_store):
     assert durations["PlannerAgent"] > 0
     assert durations["ReasonerAgent"] > 0
     assert durations["ValidatorAgent"] > 0
+
+
+def test_llama_forces_answer_when_search_budget_exhausted(monkeypatch, indexed_store):
+    # The model keeps choosing SEARCH and never FINALs; the loop must force a
+    # synthesis answer on the last turn instead of giving up.
+    def mock(system, user, **kw):
+        if "SEARCH:" in system or "FINAL:" in system:   # LLAMA_SYSTEM → keep searching
+            return "SEARCH: more detail"
+        return "Synthesized answer from the gathered context."   # FINAL_SYNTHESIS_SYSTEM
+
+    monkeypatch.setattr(llm, "complete", mock)
+    out = llama_agent.run_llama_agent("question", indexed_store)
+    assert out["answer"] == "Synthesized answer from the gathered context."
+    assert out["llm_calls"] == llama_agent.MAX_STEPS  # searches + 1 forced synthesis
+    assert "Unable to reach a conclusion" not in out["answer"]
 
 
 def test_pipeline_unknown_filter_raises(monkeypatch, indexed_store):
