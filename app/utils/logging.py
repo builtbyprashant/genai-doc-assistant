@@ -9,9 +9,11 @@ module is the skeleton it builds on.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sys
+from typing import Optional
 
 from app.core.config import get_settings
 
@@ -46,3 +48,16 @@ def get_logger(name: str = "rag") -> logging.Logger:
     logger.setLevel(level)
     logger.propagate = False  # don't double-log through the root logger
     return logger
+
+
+def hash_query(query: str, algo: Optional[str] = None) -> str:
+    """Deterministic short hash of a query for logs — never log the raw query.
+
+    The raw text may contain PII (a name can appear anywhere), so every log line
+    carries this 8-char hash instead. Same query → same hash, which also makes it
+    a natural correlation key. Default algorithm is SHA-256.
+    """
+    algo = algo or get_settings().query_hash_algo
+    digest = hashlib.new(algo)
+    digest.update(query.encode("utf-8"))
+    return digest.hexdigest()[:8]

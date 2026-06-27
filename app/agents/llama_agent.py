@@ -44,7 +44,11 @@ def run_llama_agent(question: str, store, filter_filenames=None) -> dict:
     answer = ""
     for step in range(1, MAX_STEPS + 1):
         context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
-        raw = llm.complete(LLAMA_SYSTEM, f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:")
+        raw = llm.complete(
+            LLAMA_SYSTEM,
+            f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:",
+            agent="LlamaReAct",
+        )
         llm_calls += 1
 
         if "FINAL:" in raw:

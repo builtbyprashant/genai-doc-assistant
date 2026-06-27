@@ -32,7 +32,7 @@ def validator_agent(question: str, answer: str, chunks: list[dict]) -> dict:
     context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
     user = f"QUESTION: {question}\n\nANSWER: {answer}\n\nCONTEXT:\n{context}"
 
-    raw = llm.complete(VALIDATOR_SYSTEM, user, max_tokens=300)
+    raw = llm.complete(VALIDATOR_SYSTEM, user, max_tokens=300, agent="ValidatorAgent")
     return _safe_validation(raw)
 
 

@@ -15,6 +15,7 @@ from typing import Optional
 import anthropic
 
 from app.core.config import get_settings, require_api_key
+from app.utils.retry import call_with_retry
 
 _client: Optional[anthropic.Anthropic] = None
 
@@ -27,12 +28,17 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def complete(system: str, user: str, max_tokens: int = 800, timeout: Optional[float] = None) -> str:
-    """Send one system+user turn to Claude and return the text response.
+def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None) -> str:
+    """Send one system+user turn to Claude, with the blanket retry policy.
 
-    The system prompt is marked cacheable — it is identical across calls for a
-    given agent, so Anthropic caches it after the first use.
+    `agent` labels the call so a failure reports which agent it failed at. The
+    system prompt is marked cacheable — it is identical across calls for a given
+    agent, so Anthropic caches it after the first use.
     """
+    return call_with_retry(_raw_complete, system, user, max_tokens, agent=agent)
+
+
+def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[float] = None) -> str:
     settings = get_settings()
     client = get_client()
     if timeout is not None:

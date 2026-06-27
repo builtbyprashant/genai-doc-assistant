@@ -12,8 +12,10 @@ from __future__ import annotations
 import pytest
 
 from app.agents import llm, pipeline, planner, ranker, reasoner, safety, validator
-from app.core import config
+from app.core import config, errors
 from app.services.vector_store import VectorStore
+from app.utils import logging as app_logging
+from app.utils import retry as retry_util
 
 
 @pytest.fixture
@@ -275,3 +277,71 @@ def test_pipeline_unknown_filter_raises(monkeypatch, indexed_store):
     with pytest.raises(pipeline.FilterNotFoundError):
         pipeline.run_pipeline("question", agent_mode="custom",
                               store=indexed_store, filter_filenames=["ghost.pdf"])
+
+
+# ── reliability: retry / logging / errors (Task 9) ────────────────────────────
+
+def test_retry_returns_on_first_success():
+    calls = []
+    retry_util.call_with_retry(lambda timeout=None: calls.append(timeout) or "ok")
+    assert len(calls) == 1
+
+
+def test_retry_succeeds_on_second_attempt():
+    calls = []
+
+    def fn(timeout=None):
+        calls.append(timeout)
+        if len(calls) == 1:
+            raise RuntimeError("transient")
+        return "ok"
+
+    assert retry_util.call_with_retry(fn, agent="X") == "ok"
+    assert calls == [20, 10]  # full timeout, then half on retry
+
+
+def test_retry_raises_llm_unavailable_after_exhaustion():
+    def fn(timeout=None):
+        raise RuntimeError("service down")
+
+    with pytest.raises(errors.LLMUnavailableError) as e:
+        retry_util.call_with_retry(fn, agent="ReasonerAgent")
+    assert e.value.failed_at_agent == "ReasonerAgent"
+    assert e.value.code == "llm-unavailable"
+    assert e.value.retry_after == 30
+
+
+def test_hash_query_is_sha256_first_8():
+    import hashlib
+    query = "Hi, Prashant here, tell me about cats"  # PII anywhere → must be hashed
+    assert app_logging.hash_query(query) == hashlib.sha256(query.encode()).hexdigest()[:8]
+    assert len(app_logging.hash_query(query)) == 8
+    assert app_logging.hash_query(query) == app_logging.hash_query(query)  # deterministic
+
+
+def test_problem_detail_builds_rfc7807():
+    body = errors.problem_detail("scanned-pdf", "scanned", instance="/documents/upload", request_id="abc")
+    assert body["type"] == "https://rag-api/errors/scanned-pdf"
+    assert body["title"] == "Scanned PDF detected"
+    assert body["status"] == 422
+    assert body["request_id"] == "abc"
+
+
+def test_problem_detail_allows_extra_fields():
+    body = errors.problem_detail("llm-unavailable", "down", failed_at_agent="ReasonerAgent", retry_after=30)
+    assert body["status"] == 503
+    assert body["failed_at_agent"] == "ReasonerAgent"
+    assert body["retry_after"] == 30
+
+
+def test_pipeline_surfaces_llm_unavailable(monkeypatch, indexed_store):
+    # The raw SDK call always fails → retry exhausts → LLMUnavailableError bubbles
+    # up tagged with the first agent that called the LLM (the Planner).
+    def boom(*args, **kwargs):
+        raise RuntimeError("api down")
+
+    monkeypatch.setattr(llm, "_raw_complete", boom)
+    _set_threshold(monkeypatch, "0.0")
+    with pytest.raises(errors.LLMUnavailableError) as e:
+        pipeline.run_pipeline("a real question", agent_mode="custom", store=indexed_store)
+    assert e.value.failed_at_agent == "PlannerAgent"

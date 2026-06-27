@@ -32,7 +32,7 @@ def reasoner_agent(question: str, chunks: list[dict]) -> dict:
     context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
     user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
 
-    raw = llm.complete(REASONER_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS)
+    raw = llm.complete(REASONER_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS, agent="ReasonerAgent")
     return _parse_response(raw, available)
 
 
