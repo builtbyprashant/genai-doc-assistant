@@ -322,9 +322,9 @@ genai-doc-assistant/
 
 ## Author
 
-Built by [@builtbyprashant](https://github.com/builtbyprashant) as a learning project exploring production-grade Generative AI engineering — RAG pipelines, agentic systems, vector databases, LlamaIndex, and Docker deployment.
+Built by [@builtbyprashant](https://github.com/builtbyprashant) as a learning project exploring production-grade Generative AI engineering — RAG pipelines, agentic systems, vector databases, CI/CD, and Docker deployment.
 
-Design-first approach: architecture, API contracts, requirements, and edge cases fully documented before any code was written.
+Design-first approach: the system architecture, API contracts, requirements, edge cases, CI pipeline, and deployment strategy were fully designed before any code was written. Implementation was carried out by the author together with Claude Code, under continuous design review.
 
 ---
 
