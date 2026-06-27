@@ -8,6 +8,7 @@ the app package, and never shows raw JSON or tracebacks to the user.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 
@@ -198,15 +199,67 @@ with ask_col:
     ask_clicked = st.button("Ask", type="primary", disabled=not can_ask, use_container_width=True)
 
 if ask_clicked:
-    with st.spinner("Running agent pipeline..."):
-        resp = api_post("/query", json={
-            "question": question,
-            "filter_filenames": selected,
-            "agent_mode": mode,
-            "include_chunks": True,
-            "include_trace": True,
-        })
-    st.session_state.last_result = resp.json() if resp.status_code == 200 else {"_error": detail_of(resp)}
+    req = {
+        "question": question, "filter_filenames": selected, "agent_mode": mode,
+        "include_chunks": True, "include_trace": True,
+    }
+    if mode == "custom":
+        # Custom mode streams the answer token-by-token (handled just below).
+        st.session_state.pending_stream = req
+        st.session_state.last_result = None
+    else:
+        with st.spinner("Running agent pipeline..."):
+            resp = api_post("/query", json=req)
+        st.session_state.last_result = resp.json() if resp.status_code == 200 else {"_error": detail_of(resp)}
+        st.session_state.pending_stream = None
+
+
+def _stream_answer(req: dict, holder: dict):
+    """Yield the answer text as it streams; stash the trailing metadata JSON in `holder`.
+
+    The backend sends the answer text, then a 0x1E separator, then a JSON blob with
+    confidence/sources/validation/trace. We split on that separator so only answer
+    text reaches st.write_stream.
+    """
+    sep = "\x1e"
+    meta_started = False
+    try:
+        with httpx.stream("POST", f"{BACKEND_URL}/query/stream", json=req,
+                          timeout=REQUEST_TIMEOUT) as r:
+            if r.status_code != 200:
+                r.read()
+                holder["error"] = detail_of(r)
+                return
+            for chunk in r.iter_text():
+                if meta_started:
+                    holder["meta_raw"] += chunk
+                elif sep in chunk:
+                    answer_part, meta_part = chunk.split(sep, 1)
+                    if answer_part:
+                        yield answer_part
+                    holder["meta_raw"] += meta_part
+                    meta_started = True
+                elif chunk:
+                    yield chunk
+    except httpx.HTTPError:
+        holder["error"] = "Could not reach the backend."
+
+
+# Stream the custom-mode answer live, then rerun so the full result (caption +
+# diagnostics) renders through the same path as the batch modes.
+_pending = st.session_state.get("pending_stream")
+if _pending:
+    st.session_state.pending_stream = None
+    _holder = {"meta_raw": "", "error": None}
+    st.subheader("Answer")
+    st.write_stream(_stream_answer(_pending, _holder))
+    if _holder["error"]:
+        st.session_state.last_result = {"_error": _holder["error"]}
+    elif _holder["meta_raw"]:
+        st.session_state.last_result = json.loads(_holder["meta_raw"])
+    else:
+        st.session_state.last_result = {"_error": "The service returned an empty response."}
+    st.rerun()
 
 
 # ── answer ────────────────────────────────────────────────────────────────────

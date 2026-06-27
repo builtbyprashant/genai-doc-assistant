@@ -398,3 +398,67 @@ def test_pipeline_surfaces_llm_unavailable(monkeypatch, indexed_store):
     with pytest.raises(errors.LLMUnavailableError) as e:
         pipeline.run_pipeline("a real question", agent_mode="custom", store=indexed_store)
     assert e.value.failed_at_agent == "PlannerAgent"
+
+
+# ── streaming (custom mode) ───────────────────────────────────────────────────
+
+def _fake_stream_text(system, user, **kw):
+    # Reasoner reply split across chunks, with "CONFIDENCE:" deliberately broken
+    # over two pieces to exercise the extractor's hold-back logic.
+    for piece in ["ANSWER: Transfer ", "after four ", "hours.\nCONF", "IDENCE: HIGH\nSOURCES: icu.txt"]:
+        yield piece
+
+
+def test_answer_extractor_hides_scaffolding_across_chunkings():
+    full = "ANSWER: hello there world\nCONFIDENCE: HIGH\nSOURCES: a.txt"
+    for size in (1, 2, 5, 11, 100):
+        ex = pipeline._AnswerExtractor("ANSWER:", "CONFIDENCE:")
+        raw, out, i = "", "", 0
+        while i < len(full):
+            raw += full[i:i + size]
+            i += size
+            out += ex.feed(raw)
+        out += ex.flush(raw)
+        assert out.strip() == "hello there world", f"size={size}: {out!r}"
+        assert "CONFIDENCE" not in out
+
+
+def test_pipeline_custom_stream_emits_clean_answer_then_metadata(monkeypatch, indexed_store):
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    monkeypatch.setattr(llm, "stream_text", _fake_stream_text)
+    _set_threshold(monkeypatch, "0.0")
+
+    tokens, done = [], None
+    for kind, payload in pipeline.run_pipeline_stream(
+            "When can ICU patients transfer?", agent_mode="custom", store=indexed_store):
+        if kind == "token":
+            tokens.append(payload)
+        else:
+            done = payload
+
+    answer = "".join(tokens)
+    assert "four" in answer
+    assert all(tag not in answer for tag in ("ANSWER:", "CONFIDENCE", "SOURCES:"))
+    # The terminal 'done' payload mirrors the batch single-response shape.
+    assert done["short_circuit"] is False
+    assert done["confidence"] == "high"
+    assert answer.strip() == done["answer"].strip()
+    assert [s["agent"] for s in done["trace"]] == [
+        "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
+        "RankerAgent", "ReasonerAgent", "ValidatorAgent",
+    ]
+
+
+def test_pipeline_stream_empty_store_short_circuits(monkeypatch, tmp_path):
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    empty = VectorStore(persist_path=str(tmp_path / "empty_stream"))
+    tokens, done = [], None
+    for kind, payload in pipeline.run_pipeline_stream(
+            "Any question here?", agent_mode="custom", store=empty):
+        if kind == "token":
+            tokens.append(payload)
+        else:
+            done = payload
+    assert tokens == []  # nothing to stream when it short-circuits before the answer
+    assert done["short_circuit"] is True
+    assert done["short_circuit_reason"] == "no_documents_indexed"

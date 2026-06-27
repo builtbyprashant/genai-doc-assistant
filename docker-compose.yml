@@ -17,6 +17,9 @@ services:
       # NOT a committed .env file. Compose errors with this message if it is unset.
       # Other settings use config.py defaults; add more lines here to override them.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY in your shell/Windows env first}
+      # Faster + cheaper model for lower latency (overrides config.py's sonnet default).
+      # Comment this line out to fall back to the higher-quality claude-sonnet-4-6.
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
     volumes:
       # Named volume keeps the ChromaDB index across restarts.
       # `docker compose down -v` deletes it — all documents must be re-uploaded.

@@ -8,6 +8,7 @@ return 200 with `short_circuit: true`. (DECISIONS: C-F)
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from datetime import datetime, timezone
@@ -15,10 +16,16 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agents.pipeline import FilterNotFoundError, run_pipeline
+from app.agents import safety
+from app.agents.pipeline import (
+    FilterNotFoundError,
+    _check_filter,
+    run_pipeline,
+    run_pipeline_stream,
+)
 from app.agents.safety import SafetyError
 from app.core.config import get_settings
 from app.core.errors import LLMUnavailableError, problem_detail, status_for
@@ -224,3 +231,39 @@ def query(request: Request, body: QueryRequest):
     result["request_id"] = _request_id(request)
     result["timestamp"] = _now()
     return result
+
+
+# Streamed answer (custom mode streams token-by-token; other modes emit in one piece).
+# The body is the answer text, then a 0x1E (record separator) byte, then a JSON blob
+# with the full metadata (confidence, sources, validation, trace, timing).
+STREAM_META_SEP = "\x1e"
+
+
+@app.post("/query/stream")
+def query_stream(request: Request, body: QueryRequest):
+    mode = body.agent_mode or get_settings().agent_mode
+    # Pre-check safety and filters up front so they surface as clean RFC-7807 4xx
+    # responses rather than blowing up mid-stream after headers are already sent.
+    safety.check(body.question)
+    store = get_vector_store()
+    if body.filter_filenames:
+        _check_filter(body.filter_filenames, store)
+
+    request_id, timestamp = _request_id(request), _now()
+
+    def generate():
+        meta = None
+        for kind, payload in run_pipeline_stream(
+            body.question, filter_filenames=body.filter_filenames,
+            agent_mode=mode, top_k_override=body.top_k_override, store=store,
+        ):
+            if kind == "token":
+                yield payload
+            else:
+                meta = payload
+        if meta is not None:
+            meta["request_id"] = request_id
+            meta["timestamp"] = timestamp
+            yield STREAM_META_SEP + json.dumps(meta)
+
+    return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")

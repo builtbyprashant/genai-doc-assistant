@@ -53,6 +53,25 @@ def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[flo
     return response.content[0].text
 
 
+def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None):
+    """Yield answer text deltas as the model generates them.
+
+    Unlike `complete()`, there is no retry wrapper — a stream can't be transparently
+    re-driven once bytes have been sent to the client. Connection errors propagate to
+    the caller, which is responsible for ending the stream cleanly. `agent` is accepted
+    for symmetry with `complete()` (useful when logging is added).
+    """
+    settings = get_settings()
+    client = get_client()
+    with client.messages.stream(
+        model=settings.anthropic_model,
+        max_tokens=max_tokens,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user}],
+    ) as stream:
+        yield from stream.text_stream
+
+
 def extract_json(raw: str) -> dict:
     """Pull the first JSON object out of a model response.
 
