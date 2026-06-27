@@ -156,7 +156,8 @@ st.divider()
 
 documents = st.session_state.documents
 question = st.text_area("Ask a question", placeholder="Type your question here...", height=100)
-st.caption(f"{len(question)} / 2000 characters")
+_chars = len(question)
+st.caption(f":red[{_chars} / 2000 characters]" if _chars > 1800 else f"{_chars} / 2000 characters")
 
 filenames = [d["filename"] for d in documents]
 selected = st.multiselect(
@@ -202,7 +203,13 @@ def _tame_markdown(md: str) -> str:
 
 
 def _confidence_badge(conf: str) -> str:
-    return {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}.get(conf, conf)
+    return {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low",
+            "n/a": "— not rated"}.get(conf, conf)
+
+
+def _fmt_ms(ms: int) -> str:
+    """Human-friendly duration: milliseconds under a second, seconds above."""
+    return f"{ms} ms" if ms < 1000 else f"{ms / 1000:.1f} s"
 
 
 if result and "_error" in result:
@@ -210,14 +217,14 @@ if result and "_error" in result:
 
 elif result and result.get("mode") == "compare":
     st.subheader("Comparison")
-    st.caption(f"Total time {result['processing_time_ms']} ms · both pipelines ran on the same question.")
+    st.caption(f"Total time {_fmt_ms(result['processing_time_ms'])} · both pipelines ran on the same question.")
     col_a, col_b = st.columns(2)
     for col, key, title in ((col_a, "custom", "Custom pipeline"), (col_b, "llama_index", "LlamaIndex ReAct")):
         side = result[key]
         with col:
             with st.container(border=True):
                 st.markdown(f"**{title}**")
-                st.caption(f"Confidence {side['confidence']} · {side['llm_calls']} LLM calls · {side['duration_ms']} ms")
+                st.caption(f"Confidence {_confidence_badge(side['confidence'])} · {side['llm_calls']} LLM calls · {_fmt_ms(side['duration_ms'])}")
                 st.markdown(_tame_markdown(side["answer"]) or "_(no answer)_")
                 if side["sources_used"]:
                     st.caption(f"Sources: {', '.join(side['sources_used'])}")
@@ -232,7 +239,7 @@ elif result:
         st.markdown(_tame_markdown(result["answer"]))
         st.caption(
             f"Confidence: {_confidence_badge(result['confidence'])}"
-            f" · ⏱ {result['processing_time_ms']} ms"
+            f" · ⏱ {_fmt_ms(result['processing_time_ms'])}"
             f" · Sources: {', '.join(result['sources_used']) or '—'}"
         )
         risk = result["validation"]["hallucination_risk"]
@@ -257,7 +264,7 @@ if result and "_error" not in result:
         if result.get("mode") == "compare":
             st.caption("Trace shown for the custom pipeline. The LlamaIndex side runs its own ReAct loop.")
         for step in trace:
-            st.markdown(f"{icons.get(step['status'], '•')} **{step['agent']}** · `{step['duration_ms']} ms`")
+            st.markdown(f"{icons.get(step['status'], '•')} **{step['agent']}** · `{_fmt_ms(step['duration_ms'])}`")
             details = step["details"]
             if isinstance(details, dict):
                 st.caption(" · ".join(f"{k}: {val}" for k, val in details.items()))
