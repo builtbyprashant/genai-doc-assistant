@@ -268,8 +268,17 @@ def test_pipeline_compare_envelope_shape(monkeypatch, indexed_store):
         assert set(out[side]) >= {"answer", "confidence", "sources_used", "llm_calls",
                                   "duration_ms", "chunks", "trace"}
     assert out["custom"]["llm_calls"] == 3
-    assert out["llama_index"]["confidence"] == "n/a"
+    # llama now self-rates; the mock returns no CONFIDENCE line → medium default
+    assert out["llama_index"]["confidence"] == "medium"
     assert out["short_circuit"] is False
+
+
+def test_llama_parses_self_rated_confidence(monkeypatch, indexed_store):
+    monkeypatch.setattr(llm, "complete",
+                        lambda system, user, **kw: "FINAL: TC and XT are the same.\nCONFIDENCE: HIGH")
+    out = llama_agent.run_llama_agent("are they the same?", indexed_store)
+    assert out["answer"] == "TC and XT are the same."   # CONFIDENCE line stripped off
+    assert out["confidence"] == "high"
 
 
 def test_pipeline_trace_records_real_step_durations(monkeypatch, indexed_store):

@@ -63,7 +63,7 @@ def run_pipeline(
         core = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
-    return _single_response(question, core, elapsed_ms, include_chunks, include_trace)
+    return _single_response(question, core, elapsed_ms, include_chunks, include_trace, agent_mode)
 
 
 # ── custom pipeline ───────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def _llama_core(question, filter_filenames, store, top_k) -> dict:
     run = llama_agent.run_llama_agent(question, store, filter_filenames, top_k=top_k)
     return {
         "success": True, "short_circuit": False, "short_circuit_reason": None,
-        "answer": run["answer"], "confidence": "n/a", "confidence_reason": "",
+        "answer": run["answer"], "confidence": run["confidence"], "confidence_reason": "",
         "sources_used": run["sources_used"], "validation": dict(_NEUTRAL_VALIDATION),
         "chunks": run["chunks"], "trace": run["trace"], "llm_calls": run["llm_calls"],
     }
@@ -201,8 +201,9 @@ def _compare_side(core, duration_ms, include_chunks, include_trace) -> dict:
 
 # ── shared helpers ────────────────────────────────────────────────────────────
 
-def _single_response(question, core, elapsed_ms, include_chunks, include_trace) -> dict:
+def _single_response(question, core, elapsed_ms, include_chunks, include_trace, agent_mode) -> dict:
     response = {
+        "mode": agent_mode,
         "processing_time_ms": elapsed_ms,
         "success": core["success"],
         "short_circuit": core["short_circuit"],

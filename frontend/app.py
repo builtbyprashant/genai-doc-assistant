@@ -251,9 +251,10 @@ elif result:
 
 def _trace_and_chunks(result: dict):
     """Return (trace, chunks, label) for the side we display diagnostics for."""
-    if result.get("mode") == "compare":
+    mode = result.get("mode", "custom")
+    if mode == "compare":
         return result["custom"].get("trace", []), result["custom"].get("chunks", []), "custom pipeline"
-    return result.get("trace", []), result.get("chunks", []), result.get("short_circuit") and "—" or "custom"
+    return result.get("trace", []), result.get("chunks", []), mode
 
 
 if result and "_error" not in result:

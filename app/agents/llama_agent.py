@@ -19,6 +19,8 @@ On each turn reply with EXACTLY one action:
   SEARCH: <query>   — to fetch more context from the store
   FINAL: <answer>   — when the context is enough to answer
 
+After FINAL, add a line:  CONFIDENCE: HIGH | MEDIUM | LOW
+
 Use only the provided context. If it is still insufficient after searching, give
 your best FINAL answer and note the gap."""
 
@@ -26,7 +28,8 @@ your best FINAL answer and note the gap."""
 # than exhausting the search budget and giving up.
 FINAL_SYNTHESIS_SYSTEM = (
     "Answer the question using ONLY the provided context. Be direct and concise. "
-    "If the context genuinely does not contain the answer, say so briefly."
+    "If the context genuinely does not contain the answer, say so briefly. "
+    "End with a line:  CONFIDENCE: HIGH | MEDIUM | LOW"
 )
 
 MAX_STEPS = 4
@@ -50,6 +53,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 
     answer = ""
+    confidence = "medium"
     for step in range(1, MAX_STEPS + 1):
         context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
         t = time.perf_counter()
@@ -64,7 +68,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
                 agent="LlamaReAct",
             )
             llm_calls += 1
-            answer = raw.strip()
+            answer, confidence = _split_confidence(raw)
             trace.append(_step(step, "final", int((time.perf_counter() - t) * 1000)))
             break
 
@@ -77,7 +81,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
         llm_calls += 1
 
         if "FINAL:" in raw:
-            answer = raw.split("FINAL:", 1)[1].strip()
+            answer, confidence = _split_confidence(raw.split("FINAL:", 1)[1])
             trace.append(_step(step, "final", step_ms))
             break
         if "SEARCH:" in raw:
@@ -86,7 +90,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
             trace.append(_step(step, "search", step_ms, query=query))
             continue
         # No recognised action → treat the whole reply as the answer.
-        answer = raw.strip()
+        answer, confidence = _split_confidence(raw)
         trace.append(_step(step, "final", step_ms))
         break
 
@@ -95,6 +99,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
 
     return {
         "answer": answer,
+        "confidence": confidence,
         "sources_used": sorted({c["filename"] for c in seen}),
         "llm_calls": llm_calls,
         "chunks": seen,
@@ -105,3 +110,15 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
 def _step(step: int, action: str, duration_ms: int = 0, **extra) -> dict:
     return {"agent": "LlamaReAct", "status": "completed",
             "details": {"step": step, "action": action, **extra}, "duration_ms": duration_ms}
+
+
+def _split_confidence(text: str) -> tuple[str, str]:
+    """Split a final reply into (answer, confidence). Confidence defaults to medium
+    if the model didn't emit a CONFIDENCE line."""
+    confidence = "medium"
+    if "CONFIDENCE:" in text:
+        body, tail = text.split("CONFIDENCE:", 1)
+        text = body
+        token = tail.split("\n", 1)[0].upper()
+        confidence = "high" if "HIGH" in token else "low" if "LOW" in token else "medium"
+    return text.strip(), confidence
