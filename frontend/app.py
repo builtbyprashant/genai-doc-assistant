@@ -27,6 +27,9 @@ st.markdown(
       header[data-testid="stHeader"] {display: none;}
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
+      /* the hidden header used to reserve ~6rem at the top — reclaim that space */
+      .block-container {padding-top: 2rem !important;}
+      section[data-testid="stSidebar"] .block-container {padding-top: 1.5rem !important;}
     </style>
     """,
     unsafe_allow_html=True,
