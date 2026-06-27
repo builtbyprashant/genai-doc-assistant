@@ -1,0 +1,19 @@
+# Keep the build context small and secrets out of images.
+# (The Dockerfiles only COPY app/ , frontend/ and requirements.txt, but this also
+#  stops the multi-GB .venv and the .git history from being sent to the daemon.)
+.venv/
+venv/
+genai-doc-assistant/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+.git/
+.gitignore
+.dockerignore
+
+.env
+data/
+docs/
+tests/
+*.md
