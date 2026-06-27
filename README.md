@@ -149,6 +149,8 @@ AGENT_MODE=custom
 
 # Key defaults (all configurable)
 ANTHROPIC_MODEL=claude-sonnet-4-6
+EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim — see "Swappable models"
+RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 # any cross-encoder
 SIMILARITY_THRESHOLD=0.4      # below this = no answer returned
 TOP_K_RETRIEVAL=10            # chunks fetched from ChromaDB
 TOP_K_RERANK=5                # chunks passed to Reasoner after ranking
@@ -158,6 +160,31 @@ LLM_TIMEOUT_SECONDS=20       # per LLM call, retries at half timeout (10s)
 ```
 
 See `.env.example` for all options with descriptions.
+
+### Swappable models
+
+Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`) — no code change needed. They are independent of each other, but the embedding model is constrained by the vector index.
+
+**Embedding model (bi-encoder)** — produces the vectors stored in ChromaDB.
+> ⚠️ Must output **384-dimensional** vectors to match the existing index, and changing it means **deleting the index and re-uploading** all documents (old and new vectors must come from the same model). Mind the token limit relative to `CHUNK_SIZE` too.
+
+| Model | Dim | Notes |
+|---|---|---|
+| `all-MiniLM-L6-v2` (default) | 384 | Fast, general English |
+| `BAAI/bge-small-en-v1.5` | 384 | Stronger on retrieval benchmarks |
+| `intfloat/e5-small-v2` | 384 | Good multilingual-ish |
+| `thenlper/gte-small` | 384 | Competitive small model |
+
+**Reranker (cross-encoder)** — scores `(query, chunk)` pairs after retrieval.
+> No dimension constraint — it outputs a relevance score, not a vector. **Drop-in swappable**, no re-indexing.
+
+| Model | Notes |
+|---|---|
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` (default) | Fast, good quality |
+| `cross-encoder/ms-marco-MiniLM-L-12-v2` | Larger, more accurate, slower |
+| `BAAI/bge-reranker-base` | Strong alternative |
+
+The embedding model is *plugged into* ChromaDB as its embedding function — it is not ChromaDB-specific. A different vector backend (Phase 2) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
 
 ---
 

@@ -27,6 +27,13 @@ class Settings:
     # Agent mode (default only — see note above)
     agent_mode: str
 
+    # Models (local sentence-transformers, no API key). The embedding model MUST
+    # output 384-dim vectors to match the ChromaDB collection — changing it means
+    # re-indexing. The reranker is any cross-encoder (scores, not vectors — no
+    # dimension constraint).
+    embedding_model: str
+    reranker_model: str
+
     # Retrieval
     similarity_threshold: float
     top_k_retrieval: int
@@ -61,6 +68,8 @@ def load_settings() -> Settings:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
         agent_mode=os.environ.get("AGENT_MODE", "custom"),
+        embedding_model=os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+        reranker_model=os.environ.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
         similarity_threshold=float(os.environ.get("SIMILARITY_THRESHOLD", "0.4")),
         top_k_retrieval=int(os.environ.get("TOP_K_RETRIEVAL", "10")),
         top_k_rerank=int(os.environ.get("TOP_K_RERANK", "5")),

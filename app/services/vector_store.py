@@ -25,18 +25,20 @@ from chromadb.utils import embedding_functions
 from app.core.config import get_settings
 
 COLLECTION_NAME = "documents"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # 384-dim, matches the model baked into the image
 
 
 class VectorStore:
     def __init__(self, persist_path: Optional[str] = None):
-        path = persist_path or get_settings().chroma_persist_path
+        settings = get_settings()
+        path = persist_path or settings.chroma_persist_path
         self._client = chromadb.PersistentClient(
             path=path, settings=ChromaSettings(anonymized_telemetry=False)
         )
-        # Same embedder for indexing and querying so vectors live in one space.
+        # Embedding model comes from config (EMBEDDING_MODEL). It must stay 384-dim
+        # to match an existing collection. Same embedder for indexing and querying
+        # so all vectors live in one space.
         self._embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=EMBEDDING_MODEL
+            model_name=settings.embedding_model
         )
         self._collection = self._client.get_or_create_collection(
             name=COLLECTION_NAME,

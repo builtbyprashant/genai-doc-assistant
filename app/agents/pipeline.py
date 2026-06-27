@@ -105,7 +105,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k) -> dict:
 
     ranked = ranker.ranker_agent(query, retrieved, top_k=settings.top_k_rerank)
     trace.append(_step("RankerAgent", "completed", {
-        "model": "ms-marco-MiniLM-L-6-v2", "chunks_in": len(retrieved), "chunks_out": len(ranked),
+        "model": settings.reranker_model, "chunks_in": len(retrieved), "chunks_out": len(ranked),
     }))
 
     result = reasoner.reasoner_agent(question, ranked)

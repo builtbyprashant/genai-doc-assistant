@@ -15,21 +15,22 @@ from sentence_transformers import CrossEncoder
 
 from app.core.config import get_settings
 
-RANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
-
-@lru_cache(maxsize=1)
-def _model() -> CrossEncoder:
-    return CrossEncoder(RANKER_MODEL)
+@lru_cache(maxsize=4)
+def _model(name: str) -> CrossEncoder:
+    """Load (and cache) a cross-encoder by name. Keyed on name so RERANKER_MODEL
+    can change without a stale cache."""
+    return CrossEncoder(name)
 
 
 def ranker_agent(question: str, chunks: list[dict], top_k: int | None = None) -> list[dict]:
     """Score chunks against the question and return the best `top_k`, ranked."""
     if not chunks:
         return []
-    top_k = top_k or get_settings().top_k_rerank
+    settings = get_settings()
+    top_k = top_k or settings.top_k_rerank
 
-    scores = _model().predict([(question, c["text"]) for c in chunks])
+    scores = _model(settings.reranker_model).predict([(question, c["text"]) for c in chunks])
     # Cross-encoder outputs an unbounded logit; squash to 0-1 for the API contract.
     ranked = [{**chunk, "rerank_score": _sigmoid(float(s))} for chunk, s in zip(chunks, scores)]
 
