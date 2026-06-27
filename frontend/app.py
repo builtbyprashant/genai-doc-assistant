@@ -29,21 +29,9 @@ st.markdown(
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
 
-      /* Compact + use more horizontal width; align the main area and the
-         sidebar at the same top position. */
+      /* Compact main content + use more horizontal width. The sidebar header is left
+         at Streamlit defaults — tampering with it broke the collapse control. */
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
-      /* Sidebar top space: the empty header bar (collapse arrow) + content padding.
-         Selectors vary by Streamlit version, so target several. */
-      /* The sidebar's top gap is the collapse-button header (~36px), inflated by an
-         empty stLogoSpacer (reserved for st.logo, unused). Hide the spacer, keep the
-         collapse arrow pinned top-right, and shrink the header. Section prefix raises
-         specificity so it actually overrides Streamlit's own rule. */
-      section[data-testid="stSidebar"] [data-testid="stLogoSpacer"] {display: none !important;}
-      section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
-        padding: 0.1rem 0.4rem 0 0 !important; min-height: 0 !important; height: auto !important;
-        justify-content: flex-end !important;
-      }
-      section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {padding-top: 0.4rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
