@@ -361,35 +361,48 @@ elif result:
 
 # ── diagnostics (collapsed, below the answer) ─────────────────────────────────
 
-def _trace_and_chunks(result: dict):
-    """Return (trace, chunks, label) for the side we display diagnostics for."""
-    mode = result.get("mode", "custom")
-    if mode == "compare":
-        return result["custom"].get("trace", []), result["custom"].get("chunks", []), "custom pipeline"
-    return result.get("trace", []), result.get("chunks", []), mode
+_STEP_ICONS = {"passed": "✓", "completed": "✓", "skipped": "⊘", "failed": "✗"}
+
+
+def _render_trace(trace: list):
+    if not trace:
+        st.caption("No trace.")
+    for step in trace:
+        st.markdown(f"{_STEP_ICONS.get(step['status'], '•')} **{step['agent']}** · `{_fmt_ms(step['duration_ms'])}`")
+        details = step["details"]
+        st.caption(" · ".join(f"{k}: {val}" for k, val in details.items())
+                   if isinstance(details, dict) else str(details))
+
+
+def _render_chunks(chunks: list):
+    if not chunks:
+        st.caption("No chunks (pipeline short-circuited before retrieval).")
+    for i, c in enumerate(chunks, 1):
+        st.markdown(f"**{i}. {c['filename']}** · similarity {c['similarity_score']:.2f} · rerank {c['rerank_score']:.2f}")
+        text = c["text"]
+        st.caption(text[:300] + ("…" if len(text) > 300 else ""))
+
+
+def _diagnostics_panel(trace: list, chunks: list, label: str):
+    """One pipeline's collapsed trace + retrieved-chunks expanders."""
+    with st.expander(f"🔧 Pipeline trace — {label}", expanded=False):
+        _render_trace(trace)
+    with st.expander(f"📄 Retrieved chunks — {label} ({len(chunks)})", expanded=False):
+        _render_chunks(chunks)
 
 
 if result and "_error" not in result:
-    trace, chunks, label = _trace_and_chunks(result)
-    icons = {"passed": "✓", "completed": "✓", "skipped": "⊘", "failed": "✗"}
-
-    with st.expander(f"🔧 Pipeline trace — {label}", expanded=False):
-        if result.get("mode") == "compare":
-            st.caption("Trace shown for the custom pipeline. The LlamaIndex side runs its own ReAct loop.")
-        for step in trace:
-            st.markdown(f"{icons.get(step['status'], '•')} **{step['agent']}** · `{_fmt_ms(step['duration_ms'])}`")
-            details = step["details"]
-            if isinstance(details, dict):
-                st.caption(" · ".join(f"{k}: {val}" for k, val in details.items()))
-            else:
-                st.caption(str(details))
-
-    with st.expander(f"📄 Retrieved chunks — {label} ({len(chunks)})", expanded=False):
-        if not chunks:
-            st.caption("No chunks (pipeline short-circuited before retrieval).")
-        for i, c in enumerate(chunks, 1):
-            st.markdown(
-                f"**{i}. {c['filename']}** · similarity {c['similarity_score']:.2f} · rerank {c['rerank_score']:.2f}"
-            )
-            text = c["text"]
-            st.caption(text[:300] + ("…" if len(text) > 300 else ""))
+    if result.get("mode") == "compare":
+        # Both pipelines' internals, side by side under their respective answers —
+        # custom's fixed 7-step trace vs the LlamaIndex ReAct loop, and what each retrieved.
+        st.caption("Pipeline internals — compare how each side reached its answer:")
+        diag_custom, diag_llama = st.columns(2)
+        with diag_custom:
+            _diagnostics_panel(result["custom"].get("trace", []),
+                               result["custom"].get("chunks", []), "Custom pipeline")
+        with diag_llama:
+            _diagnostics_panel(result["llama_index"].get("trace", []),
+                               result["llama_index"].get("chunks", []), "LlamaIndex ReAct")
+    else:
+        _diagnostics_panel(result.get("trace", []), result.get("chunks", []),
+                           result.get("mode", "custom"))
