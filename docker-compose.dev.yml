@@ -1,0 +1,37 @@
+# Dev override — hot-reload code WITHOUT rebuilding the images.
+#
+# Usage (ANTHROPIC_API_KEY must be in your shell, same as prod):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Then edits to app/ and frontend/ reload live in the running containers — no
+# rebuild needed. Only requirements / Dockerfile changes still need `--build`.
+#
+# It mounts your live source over the image's copy and runs the servers in
+# reload mode. Polling file-watchers are used so host edits are detected across
+# the Windows/WSL2 bind-mount boundary.
+
+services:
+  backend:
+    volumes:
+      - ./app:/app/app
+    environment:
+      - WATCHFILES_FORCE_POLLING=true
+    command:
+      - uvicorn
+      - app.api.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+      - --reload-dir=/app/app
+
+  frontend:
+    volumes:
+      - ./frontend:/app/frontend
+    command:
+      - streamlit
+      - run
+      - frontend/app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+      - --server.runOnSave=true
+      - --server.fileWatcherType=poll
