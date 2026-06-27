@@ -15,7 +15,8 @@ llama-index>=0.11              # SimpleDirectoryReader + ReActAgent
 # ── Document parsing ─────────────────────────────────────────────────────────
 pypdf>=4.2                     # PDF text extraction
 pandas>=2.2                    # CSV / Excel
-openpyxl>=3.1                  # .xlsx / .xls
+openpyxl>=3.1                  # .xlsx
+xlrd>=2.0                      # .xls (legacy Excel binary)
 python-docx>=1.1               # .docx Word document parsing
 pyyaml>=6.0                    # .yaml / .yml
 chardet>=5.2                   # TXT encoding detection

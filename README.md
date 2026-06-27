@@ -77,7 +77,7 @@ docker compose down -v       # stop containers, DELETE all indexed data
 
 ## Supported Document Formats
 
-Formats are parsed by LlamaIndex SimpleDirectoryReader; validation and rejection (scanned/password PDFs, duplicates, oversized files) happen on the raw bytes *before* parsing:
+Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml, …); validation and rejection (scanned/password PDFs, duplicates, oversized files) happen on the raw bytes *before* parsing:
 
 | Format | Extension | Notes |
 |---|---|---|
@@ -254,7 +254,7 @@ See Phase 2 Scope in `/docs` for the full roadmap with implementation details.
 | Embedding model | all-MiniLM-L6-v2 (sentence-transformers, 384 dimensions) |
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
 | LLM | Claude claude-sonnet-4-6 via Anthropic API |
-| Document loading | LlamaIndex SimpleDirectoryReader (8 formats) |
+| Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
 | Agent framework | LlamaIndex ReActAgent (llama_index and compare modes) |
 | Testing | pytest + httpx |
 | Deployment | Docker Compose (primary) + Python venv (local dev) |
