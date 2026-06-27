@@ -16,6 +16,7 @@ from functools import lru_cache
 # parameter, so a per-request override (POST /query) never reads this value.
 # (DECISIONS: C-D, D-6d)
 VALID_AGENT_MODES = ("custom", "llama_index", "compare")
+VALID_CACHE_MODES = ("block", "prompt", "off")
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,12 @@ class Settings:
     # LLM
     anthropic_api_key: str
     anthropic_model: str
+    # Prompt-caching strategy (DECISIONS: D-12):
+    #   block  → cache the (stable) system prompt as its own block — best for this
+    #            app's single-turn pattern; the system prompt repeats across queries.
+    #   prompt → top-level cache_control marks the whole prompt prefix (last block).
+    #   off    → no caching.
+    cache_mode: str
 
     # Agent mode (default only — see note above)
     agent_mode: str
@@ -67,6 +74,7 @@ def load_settings() -> Settings:
     settings = Settings(
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+        cache_mode=os.environ.get("ANTHROPIC_CACHE_MODE", "block"),
         agent_mode=os.environ.get("AGENT_MODE", "custom"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
         reranker_model=os.environ.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
@@ -94,6 +102,10 @@ def _validate(s: Settings) -> None:
     if s.agent_mode not in VALID_AGENT_MODES:
         raise ValueError(
             f"AGENT_MODE must be one of {VALID_AGENT_MODES}, got '{s.agent_mode}'"
+        )
+    if s.cache_mode not in VALID_CACHE_MODES:
+        raise ValueError(
+            f"ANTHROPIC_CACHE_MODE must be one of {VALID_CACHE_MODES}, got '{s.cache_mode}'"
         )
     if not 0.0 <= s.similarity_threshold <= 1.0:
         raise ValueError("SIMILARITY_THRESHOLD must be between 0.0 and 1.0")

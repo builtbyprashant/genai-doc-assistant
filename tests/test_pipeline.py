@@ -491,3 +491,53 @@ def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_st
         "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
         "RankerAgent", "ReasonerAgent", "ValidatorAgent",
     }
+
+
+# ── prompt caching: block-level vs prompt-level (D-12) ─────────────────────────
+
+def test_cache_kwargs_block_is_block_level():
+    kw = llm._cache_kwargs("SYS", "block")
+    # system prompt is its own cacheable block; no top-level marker
+    assert kw["system"] == [{"type": "text", "text": "SYS", "cache_control": {"type": "ephemeral"}}]
+    assert "cache_control" not in kw
+
+
+def test_cache_kwargs_prompt_is_top_level():
+    kw = llm._cache_kwargs("SYS", "prompt")
+    # plain system string + a top-level cache_control marker (caches the whole prefix)
+    assert kw["system"] == "SYS"
+    assert kw["cache_control"] == {"type": "ephemeral"}
+
+
+def test_cache_kwargs_off_has_no_caching():
+    assert llm._cache_kwargs("SYS", "off") == {"system": "SYS"}
+
+
+def test_invalid_cache_mode_rejected(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_CACHE_MODE", "banana")
+    config.get_settings.cache_clear()
+    with pytest.raises(ValueError, match="ANTHROPIC_CACHE_MODE"):
+        config.load_settings()
+    config.get_settings.cache_clear()
+
+
+def test_complete_logs_cache_usage(monkeypatch):
+    class FakeUsage:
+        input_tokens, output_tokens = 120, 30
+        cache_read_input_tokens, cache_creation_input_tokens = 95, 0
+
+    monkeypatch.setattr(llm, "_raw_complete", lambda *a, **k: ("hello", FakeUsage()))
+    captured: dict = {}
+
+    def fake_info(msg, extra=None):
+        ctx = (extra or {}).get("context", {})
+        if ctx.get("event") == "llm_usage":
+            captured.update(ctx)
+
+    monkeypatch.setattr(llm._logger, "info", fake_info)
+    out = llm.complete("system", "user", agent="ReasonerAgent")
+
+    assert out == "hello"
+    assert captured["agent"] == "ReasonerAgent"
+    assert captured["cache_read_input_tokens"] == 95
+    assert captured["cache_mode"] in ("block", "prompt", "off")

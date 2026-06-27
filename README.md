@@ -172,6 +172,7 @@ AGENT_MODE=custom
 # Key defaults (all configurable)
 # Default is Haiku for faster responses; set to claude-sonnet-4-6 for max answer quality.
 ANTHROPIC_MODEL=claude-haiku-4-5
+ANTHROPIC_CACHE_MODE=block    # prompt caching: block (default) | prompt | off — see "Prompt caching"
 EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim — see "Swappable models"
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 # any cross-encoder
 SIMILARITY_THRESHOLD=0.4      # below this = no answer returned
@@ -183,6 +184,24 @@ LLM_TIMEOUT_SECONDS=20       # per LLM call, retries at half timeout (10s)
 ```
 
 See `.env.example` for all options with descriptions.
+
+### Prompt caching
+
+Anthropic prompt caching is supported in two forms, selected by `ANTHROPIC_CACHE_MODE`:
+
+| Mode | What it does | Best for |
+|---|---|---|
+| `block` (default) | **Block-level** — the system prompt is its own cacheable block (`cache_control` on the system block). | This app: each agent's system prompt is identical across queries, so it's served from cache after the first call. |
+| `prompt` | **Prompt-level** — a top-level `cache_control` marker caches the whole prompt prefix (the SDK applies it to the last block). | A long prefix that repeats verbatim (e.g. multi-turn). For single-turn RAG the changing question/context limits reuse. |
+| `off` | No caching. | Debugging / comparison. |
+
+Cache effectiveness is **observable in the logs**: every LLM call emits an `llm_usage` event with `cache_read_input_tokens` (served from cache) and `cache_creation_input_tokens` (written to cache):
+
+```bash
+docker compose logs backend | grep llm_usage
+# {"event":"llm_usage","agent":"ReasonerAgent","cache_mode":"block",
+#  "input_tokens":120,"output_tokens":30,"cache_read_input_tokens":95,"cache_creation_input_tokens":0}
+```
 
 ### Swappable models
 
