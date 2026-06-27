@@ -32,7 +32,11 @@ st.markdown(
       /* Compact + use more horizontal width; align the main area and the
          sidebar at the same top position. */
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
-      section[data-testid="stSidebar"] .block-container {padding-top: 0.2rem !important;}
+      /* Sidebar top space: the empty header bar (collapse arrow) + content padding.
+         Selectors vary by Streamlit version, so target several. */
+      [data-testid="stSidebarHeader"] {padding-top: 0.4rem !important; padding-bottom: 0 !important;}
+      [data-testid="stSidebarUserContent"] {padding-top: 0 !important;}
+      section[data-testid="stSidebar"] .block-container {padding-top: 0.4rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
