@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Test coverage artifacts
+.coverage
+coverage.xml
+
 # Virtual environments
 .venv/
 venv/
