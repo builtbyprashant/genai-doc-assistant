@@ -29,9 +29,24 @@ st.markdown(
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
 
-      /* Compact main content + use more horizontal width. The sidebar header is left
-         at Streamlit defaults — tampering with it broke the collapse control. */
+      /* Compact main content + use more horizontal width. */
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
+
+      /* Float the collapse-button header to the top-right so it no longer reserves
+         vertical space — content then starts at the very top. The arrow stays
+         clickable; the empty rest of the header is click-through so it can't block
+         the content under it. (Revert frontend/app.py to commit 6609532 if the
+         collapse control misbehaves.) */
+      section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {position: relative !important;}
+      section[data-testid="stSidebar"] [data-testid="stSidebarHeader"] {
+        position: absolute !important; top: 0; right: 0;
+        height: auto !important; min-height: 0 !important;
+        padding: 0.25rem 0.4rem 0 0 !important;
+        background: transparent !important; pointer-events: none;
+      }
+      section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {pointer-events: auto !important;}
+      section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {padding-top: 0.5rem !important;}
+
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
