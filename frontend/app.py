@@ -9,6 +9,7 @@ the app package, and never shows raw JSON or tracebacks to the user.
 from __future__ import annotations
 
 import os
+import re
 
 import httpx
 import streamlit as st
@@ -172,6 +173,16 @@ if st.button("Ask", type="primary", disabled=not can_ask):
 result = st.session_state.last_result
 
 
+def _tame_markdown(md: str) -> str:
+    """Render any markdown headings in an answer as bold text instead.
+
+    Models (especially the llama_index ReAct answer) sometimes format their reply as
+    a document with `#`/`##` headings, which render huge — particularly in the narrow
+    compare columns. This keeps the structure as bold labels at normal size.
+    """
+    return re.sub(r"(?m)^#{1,6}\s+(.*)$", r"**\1**", md or "")
+
+
 def _confidence_badge(conf: str) -> str:
     return {"high": "🟢 High", "medium": "🟡 Medium", "low": "🔴 Low"}.get(conf, conf)
 
@@ -189,7 +200,7 @@ elif result and result.get("mode") == "compare":
             with st.container(border=True):
                 st.markdown(f"**{title}**")
                 st.caption(f"Confidence {side['confidence']} · {side['llm_calls']} LLM calls · {side['duration_ms']} ms")
-                st.markdown(side["answer"] or "_(no answer)_")
+                st.markdown(_tame_markdown(side["answer"]) or "_(no answer)_")
                 if side["sources_used"]:
                     st.caption(f"Sources: {', '.join(side['sources_used'])}")
     v = result["validation"]
@@ -200,7 +211,7 @@ elif result:
         st.info(f"ℹ️ {result['validation']['issues'][0]}")
     else:
         st.subheader("Answer")
-        st.markdown(result["answer"])
+        st.markdown(_tame_markdown(result["answer"]))
         st.caption(
             f"Confidence: {_confidence_badge(result['confidence'])}"
             f" · ⏱ {result['processing_time_ms']} ms"
