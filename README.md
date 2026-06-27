@@ -38,6 +38,8 @@ An AI-powered document intelligence system that allows users to upload enterpris
 | ReasonerAgent | LLM Agent | claude-sonnet-4-6 | Grounded answer generation |
 | ValidatorAgent | LLM Agent | claude-sonnet-4-6 | Hallucination check |
 
+**Built from scratch.** We implemented three pipeline modes using only the Anthropic SDK and ChromaDB. The `custom` mode is a fixed sequential pipeline optimised for predictability. The `llama_index` mode implements the ReAct reasoning pattern — the same pattern LlamaIndex's ReActAgent uses internally — without the framework dependency. `compare` mode runs both on the same query for evaluation. A future version replaces our custom ReAct loop with the real LlamaIndex binding.
+
 ---
 
 ## Quick Start
@@ -121,11 +123,11 @@ This project was designed before any code was written. Full documentation is ava
 
 | Document | Contents |
 |---|---|
-| Phase 1 Project Scope | Architecture, tech stack, pipeline design, env vars |
+| Project Scope | Architecture, tech stack, pipeline design, env vars |
 | Requirements and Assumptions | 40+ edge cases with acceptable behaviours, design decisions |
 | API Contract | All endpoints, request/response shapes, error types |
 | UI Specification | Every screen state, component behaviour, session state |
-| Phase 2 Scope | AWS deployment, Grafana observability, production optimisations |
+| Future Version Scope | AWS deployment, Grafana observability, production optimisations |
 | Decision Log | Single source of truth — every design decision, rationale, and status |
 | Implementation Plan | Build order, per-task file scope, test mapping — all mapped to decisions |
 
@@ -184,7 +186,7 @@ Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`) 
 | `cross-encoder/ms-marco-MiniLM-L-12-v2` | Larger, more accurate, slower |
 | `BAAI/bge-reranker-base` | Strong alternative |
 
-The embedding model is *plugged into* ChromaDB as its embedding function — it is not ChromaDB-specific. A different vector backend (Phase 2) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
+The embedding model is *plugged into* ChromaDB as its embedding function — it is not ChromaDB-specific. A different vector backend (a future version) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
 
 ---
 
@@ -244,12 +246,12 @@ Tests cover all services, all API endpoints, edge cases from requirements, and p
 
 ## Limitations
 
-- Single-turn Q&A only (no conversation history) — Phase 2
+- Single-turn Q&A only (no conversation history) — planned for a future version
 - Maximum 20 documents per index (configurable via `MAX_DOCUMENTS`)
 - PDF must have a text layer — scanned/image PDFs not supported
 - Original uploaded files are not persisted — only chunks stored in ChromaDB
 - Embedding model optimised for English — other languages produce lower quality
-- No authentication or access control — Phase 2
+- No authentication or access control — planned for a future version
 - Single user assumed — concurrent writes not guaranteed safe at scale
 - Query response time 2–4 seconds typical (3 LLM calls + 1 encoder call)
 
@@ -257,7 +259,7 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 
 ---
 
-## Phase 2 Roadmap
+## Roadmap (Future Version)
 
 - AWS deployment via Terraform (ECS, S3, ElastiCache)
 - Grafana observability via CloudWatch + Loki
@@ -269,7 +271,7 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 - Authentication (API key middleware)
 - Maximum 2 LLM calls per query (deterministic grounding check replaces ValidatorAgent)
 
-See Phase 2 Scope in `/docs` for the full roadmap with implementation details.
+See the Future Version Scope in `/docs` for the full roadmap with implementation details.
 
 ---
 
@@ -284,7 +286,7 @@ See Phase 2 Scope in `/docs` for the full roadmap with implementation details.
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
 | LLM | Claude claude-sonnet-4-6 via Anthropic API |
 | Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
-| llama_index mode | Lightweight ReAct loop on the Anthropic SDK (full LlamaIndex deferred to Phase 2) |
+| llama_index mode | Lightweight ReAct loop on the Anthropic SDK (full LlamaIndex deferred to a future version) |
 | Testing | pytest + httpx |
 | Deployment | Docker Compose (primary) + Python venv (local dev) |
 
