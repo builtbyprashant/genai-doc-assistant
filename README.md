@@ -57,17 +57,29 @@ An AI-powered document intelligence system that allows users to upload enterpris
 git clone https://github.com/builtbyprashant/genai-doc-assistant
 cd genai-doc-assistant
 
-# 2. Provide your API key via your shell environment (no .env file needed)
-#    PowerShell:  $env:ANTHROPIC_API_KEY = "sk-ant-..."
+# 2. Create your local .env from the committed template. It holds the non-secret
+#    config knobs (model, thresholds, chunking…). .env is gitignored; .env.example
+#    is checked in so the defaults are always tracked.
+#    PowerShell:  Copy-Item .env.example .env
+#    bash:        cp .env.example .env
+
+# 3. Provide your API key via your shell environment — it is NOT stored in .env.
+#    PowerShell:  setx ANTHROPIC_API_KEY "sk-ant-..."   (new shells) — or for this shell:
+#                 $env:ANTHROPIC_API_KEY = "sk-ant-..."
 #    bash:        export ANTHROPIC_API_KEY=sk-ant-...
 
-# 3. Start the system (reads ANTHROPIC_API_KEY from your shell)
+# 4. Start the system (API key from your shell, config from .env)
 docker compose up --build
 
-# 4. Open in browser
+# 5. Open in browser
 # Streamlit UI:  http://localhost:8501
 # API docs:      http://localhost:8000/docs
 ```
+
+> **`.env` vs the system env:** the Anthropic API key lives **only in your shell/OS
+> environment** (Docker Compose reads it from there), never in `.env`. Everything else
+> lives in `.env` — edit a value and re-run `docker compose up` to see it take effect.
+> A fresh clone with no `.env` still runs on the built-in defaults.
 
 **First use:**
 1. Upload one or more documents using the left sidebar
@@ -143,11 +155,13 @@ This project was designed before any code was written. Full documentation is ava
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure:
+`.env` (copied from the committed `.env.example`) holds all the **non-secret** config.
+Edit a value and re-run `docker compose up` to apply it. The `ANTHROPIC_API_KEY` is **not**
+in this file — it is read from your shell/OS environment (see Quick Start).
 
 ```bash
-# Required — get your key at https://console.anthropic.com
-ANTHROPIC_API_KEY=sk-ant-...
+# ANTHROPIC_API_KEY — set in your shell/OS env, NOT in .env:
+#   setx ANTHROPIC_API_KEY "sk-ant-..."   (key from https://console.anthropic.com)
 
 # Agent mode (default: custom)
 # custom      → 7-step pipeline, 3 LLM calls, predictable
