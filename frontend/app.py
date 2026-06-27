@@ -34,10 +34,12 @@ st.markdown(
       .block-container {padding: 0.6rem 2.5rem 1rem 2.5rem !important;}
       /* Sidebar top space: the empty header bar (collapse arrow) + content padding.
          Selectors vary by Streamlit version, so target several. */
-      [data-testid="stSidebarHeader"] {padding: 0.25rem 1rem 0 !important; min-height: 0 !important; height: auto !important;}
-      [data-testid="stSidebarUserContent"] {padding-top: 0.25rem !important;}
-      section[data-testid="stSidebar"] > div:first-child {padding-top: 0 !important;}
-      section[data-testid="stSidebar"] .block-container {padding-top: 0.4rem !important;}
+      /* The sidebar's top gap is the collapse-button header (~36px), inflated by
+         an empty stLogoSpacer (reserved for st.logo, which we don't use). Hide the
+         spacer and zero the header padding so content sits under the collapse arrow. */
+      [data-testid="stLogoSpacer"] {display: none !important;}
+      [data-testid="stSidebarHeader"] {padding: 0 !important; min-height: 0 !important; height: auto !important;}
+      [data-testid="stSidebarUserContent"] {padding-top: 0.5rem !important;}
       [data-testid="stVerticalBlock"] {gap: 0.5rem !important;}   /* gap between stacked elements */
       hr {margin: 0.4rem 0 !important;}                            /* dividers */
       h1 {margin: 0 0 0.2rem 0 !important; font-size: 2rem !important;}
