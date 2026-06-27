@@ -18,7 +18,21 @@ An AI-powered document intelligence system that allows users to upload enterpris
 
 ## Architecture
 
-<!-- Architecture diagram will be added after build is complete -->
+```text
+Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend
+                                        │
+                  ┌─────────────────────┴──────────────────────┐
+                  │              7-step query pipeline           │
+                  │  SafetyGuard → Planner → Retriever →         │
+                  │  SimilarityThreshold → Ranker → Reasoner →   │
+                  │  Validator                                   │
+                  └──────────┬───────────────────────┬──────────┘
+                             ▼                        ▼
+                   ChromaDB (vectors,         Anthropic API
+                   cosine; persisted)         (Planner / Reasoner / Validator)
+```
+
+In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-token (`POST /query/stream`).
 
 **7-step query pipeline — three modes via AGENT_MODE flag:**
 
@@ -165,7 +179,7 @@ in this file — it is read from your shell/OS environment (see Quick Start).
 
 # Agent mode (default: custom)
 # custom      → 7-step pipeline, 3 LLM calls, predictable
-# llama_index → LlamaIndex ReActAgent, variable LLM calls
+# llama_index → ReAct search→answer loop on the Anthropic SDK (no LlamaIndex dep), variable LLM calls
 # compare     → both modes, side-by-side results for evaluation
 AGENT_MODE=custom
 
@@ -309,7 +323,7 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 
 ---
 
-## Roadmap (Future Version)
+## Roadmap
 
 - AWS deployment via Terraform (ECS, S3, ElastiCache)
 - Grafana observability via CloudWatch + Loki
