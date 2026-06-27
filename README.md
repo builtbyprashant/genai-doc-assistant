@@ -23,8 +23,8 @@ An AI-powered document intelligence system that allows users to upload enterpris
 | Mode | Description | LLM calls | Best for |
 |---|---|---|---|
 | `custom` (default) | Sequential 7-step pipeline | 3 fixed | Speed, predictability, full trace |
-| `llama_index` | Lightweight ReAct loop (Anthropic SDK) | 2–8 variable | Complex multi-step reasoning |
-| `compare` | Runs both, side-by-side results | 5–11 combined | Pipeline evaluation and tuning |
+| `llama_index` | ReAct search→answer loop (Anthropic SDK) | 1–4 variable | Complex multi-step reasoning |
+| `compare` | Runs both, side-by-side results | 4–7 combined | Pipeline evaluation and tuning |
 
 | Step | Type | Model | Purpose |
 |---|---|---|---|
