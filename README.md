@@ -1,5 +1,7 @@
 # Agentic RAG Knowledge System
 
+[![CI](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml)
+
 > Upload your documents. Ask questions in plain English. Get grounded, cited answers powered by a multi-agent AI pipeline.
 
 ---
