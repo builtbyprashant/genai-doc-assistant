@@ -31,12 +31,18 @@ An AI-powered document intelligence system that allows users to upload enterpris
 | Step | Type | Model | Purpose |
 |---|---|---|---|
 | SafetyGuard | Pipeline function | None | Prompt injection detection |
-| PlannerAgent | LLM Agent | claude-sonnet-4-6 | Query intent + rewrite |
+| PlannerAgent | LLM Agent | claude-haiku-4-5 | Query intent + rewrite |
 | RetrieverAgent | Pipeline function | all-MiniLM-L6-v2 | Semantic search |
 | SimilarityThreshold | Pipeline function | None | Relevance gate |
 | RankerAgent | Pipeline function | ms-marco-MiniLM-L-6-v2 | Answer relevance scoring |
-| ReasonerAgent | LLM Agent | claude-sonnet-4-6 | Grounded answer generation |
-| ValidatorAgent | LLM Agent | claude-sonnet-4-6 | Hallucination check |
+| ReasonerAgent | LLM Agent | claude-haiku-4-5 | Grounded answer generation (streamed in `custom` mode) |
+| ValidatorAgent | LLM Agent | claude-haiku-4-5 | Hallucination check |
+
+> **Model & speed.** The three LLM agents default to **`claude-haiku-4-5`** — we switched from
+> `claude-sonnet-4-6` to **improve response time** (Haiku generates ~3× faster). The model stays
+> **configurable** via the `ANTHROPIC_MODEL` env var; set it back to `claude-sonnet-4-6` for maximum
+> answer quality. In `custom` mode the answer is also **streamed** to the UI token-by-token, so the
+> first words appear in ~2–4 s instead of after the whole answer is written.
 
 **Built from scratch.** We implemented three pipeline modes using only the Anthropic SDK and ChromaDB. The `custom` mode is a fixed sequential pipeline optimised for predictability. The `llama_index` mode implements the ReAct reasoning pattern — the same pattern LlamaIndex's ReActAgent uses internally — without the framework dependency. `compare` mode runs both on the same query for evaluation. A future version replaces our custom ReAct loop with the real LlamaIndex binding.
 
@@ -112,7 +118,7 @@ Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml
 3. **RetrieverAgent** — cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
 4. **SimilarityThreshold** — rejects if best match scores below 0.4, short-circuits pipeline
 5. **RankerAgent** — cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
-6. **ReasonerAgent** — generates grounded answer using only retrieved context (LLM call 2)
+6. **ReasonerAgent** — generates grounded answer using only retrieved context (LLM call 2); in `custom` mode this answer is **streamed** to the UI token-by-token via `POST /query/stream`
 7. **ValidatorAgent** — independent hallucination risk check with fresh context (LLM call 3)
 
 ---
@@ -150,7 +156,8 @@ ANTHROPIC_API_KEY=sk-ant-...
 AGENT_MODE=custom
 
 # Key defaults (all configurable)
-ANTHROPIC_MODEL=claude-sonnet-4-6
+# Default is Haiku for faster responses; set to claude-sonnet-4-6 for max answer quality.
+ANTHROPIC_MODEL=claude-haiku-4-5
 EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim — see "Swappable models"
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 # any cross-encoder
 SIMILARITY_THRESHOLD=0.4      # below this = no answer returned
@@ -200,7 +207,8 @@ The FastAPI backend exposes a REST API with auto-generated documentation at `htt
 | POST | `/documents/upload` | Upload one or more documents (207 multi-status) |
 | GET | `/documents` | List indexed documents |
 | DELETE | `/documents/{filename}` | Remove a document |
-| POST | `/query` | Ask a question |
+| POST | `/query` | Ask a question (batch — full JSON response) |
+| POST | `/query/stream` | Ask a question, **streamed** (`custom` mode streams the answer token-by-token, then a JSON metadata frame) |
 
 **Example query:**
 ```bash
@@ -222,6 +230,15 @@ curl -X POST http://localhost:8000/query \
     "question": "Summarise all transfer requirements",
     "agent_mode": "compare"
   }'
+```
+
+**Example streamed query (`custom` mode):**
+```bash
+# Streams the answer text, then a 0x1E byte, then a JSON metadata frame
+# (confidence, sources, validation, trace). Use -N to disable curl buffering.
+curl -N -X POST http://localhost:8000/query/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the ICU transfer criteria?", "agent_mode": "custom"}'
 ```
 
 ---
@@ -253,7 +270,7 @@ Tests cover all services, all API endpoints, edge cases from requirements, and p
 - Embedding model optimised for English — other languages produce lower quality
 - No authentication or access control — planned for a future version
 - Single user assumed — concurrent writes not guaranteed safe at scale
-- Query response time 2–4 seconds typical (3 LLM calls + 1 encoder call)
+- Query response time ~2–4 seconds typical in `custom` mode with the Haiku default; the answer streams so the first words appear in ~2–4 s. Switching `ANTHROPIC_MODEL` to `claude-sonnet-4-6` raises quality but roughly triples generation time
 
 See Requirements and Assumptions in `/docs` for the full list with design rationale.
 
@@ -284,7 +301,7 @@ See the Future Version Scope in `/docs` for the full roadmap with implementation
 | Vector database | ChromaDB (embedded, cosine space, persisted) |
 | Embedding model | all-MiniLM-L6-v2 (sentence-transformers, 384 dimensions) |
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
-| LLM | Claude claude-sonnet-4-6 via Anthropic API |
+| LLM | Claude `claude-haiku-4-5` via Anthropic API (default — for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
 | Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
 | llama_index mode | Lightweight ReAct loop on the Anthropic SDK (full LlamaIndex deferred to a future version) |
 | Testing | pytest + httpx |
