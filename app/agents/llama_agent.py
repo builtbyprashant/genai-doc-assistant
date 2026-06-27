@@ -8,6 +8,8 @@ Full LlamaIndex ReActAgent integration is deferred to Phase 2.
 
 from __future__ import annotations
 
+import time
+
 from app.agents import llm
 from app.core.config import get_settings
 
@@ -43,25 +45,27 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
     answer = ""
     for step in range(1, MAX_STEPS + 1):
         context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
+        t = time.perf_counter()
         raw = llm.complete(
             LLAMA_SYSTEM,
             f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:",
             agent="LlamaReAct",
         )
+        step_ms = int((time.perf_counter() - t) * 1000)
         llm_calls += 1
 
         if "FINAL:" in raw:
             answer = raw.split("FINAL:", 1)[1].strip()
-            trace.append(_step(step, "final"))
+            trace.append(_step(step, "final", step_ms))
             break
         if "SEARCH:" in raw:
             query = raw.split("SEARCH:", 1)[1].splitlines()[0].strip()
             remember(store.retrieve(query, top_k=top_k, filter_filenames=filter_filenames))
-            trace.append(_step(step, "search", query=query))
+            trace.append(_step(step, "search", step_ms, query=query))
             continue
         # No recognised action → treat the whole reply as the answer.
         answer = raw.strip()
-        trace.append(_step(step, "final"))
+        trace.append(_step(step, "final", step_ms))
         break
     else:
         answer = answer or "Unable to reach a conclusion from the available documents."
@@ -75,5 +79,6 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
     }
 
 
-def _step(step: int, action: str, **extra) -> dict:
-    return {"agent": "LlamaReAct", "status": "completed", "details": {"step": step, "action": action, **extra}, "duration_ms": 0}
+def _step(step: int, action: str, duration_ms: int = 0, **extra) -> dict:
+    return {"agent": "LlamaReAct", "status": "completed",
+            "details": {"step": step, "action": action, **extra}, "duration_ms": duration_ms}

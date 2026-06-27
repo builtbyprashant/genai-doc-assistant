@@ -48,16 +48,19 @@ def run_pipeline(
     store = store if store is not None else get_vector_store()
     top_k = top_k_override or settings.top_k_retrieval
 
+    safety_start = time.perf_counter()
     safety.check(question)  # SafetyError → API 400
+    safety_ms = _ms(safety_start)
     started = time.perf_counter()
 
     if agent_mode == "compare":
-        return _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, started)
+        return _run_compare(question, filter_filenames, include_chunks, include_trace,
+                            store, settings, top_k, safety_ms, started)
 
     if agent_mode == "llama_index":
         core = _llama_core(question, filter_filenames, store, top_k)
     else:
-        core = _custom_core(question, filter_filenames, store, settings, top_k)
+        core = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     return _single_response(question, core, elapsed_ms, include_chunks, include_trace)
@@ -65,8 +68,8 @@ def run_pipeline(
 
 # ── custom pipeline ───────────────────────────────────────────────────────────
 
-def _custom_core(question, filter_filenames, store, settings, top_k) -> dict:
-    trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.")]
+def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0) -> dict:
+    trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.", safety_ms)]
 
     if store.chunk_count() == 0:
         trace.append(_step("RetrieverAgent", "skipped", "no_documents_indexed"))
@@ -75,20 +78,23 @@ def _custom_core(question, filter_filenames, store, settings, top_k) -> dict:
 
     _check_filter(filter_filenames, store)
 
+    t = time.perf_counter()
     plan = planner.planner_agent(question)
     query = plan["rewritten_query"]
     trace.append(_step("PlannerAgent", "completed", {
         "intent": plan["intent"], "retrieval_strategy": plan["retrieval_strategy"],
         "top_k": top_k, "rewritten_query": query,
-    }))
+    }, _ms(t)))
 
+    t = time.perf_counter()
     retrieved = store.retrieve(query, top_k=top_k, filter_filenames=filter_filenames)
+    retrieve_ms = _ms(t)
     top_score = retrieved[0]["similarity_score"] if retrieved else 0.0
     passed = bool(retrieved) and top_score >= settings.similarity_threshold
     trace.append(_step("RetrieverAgent", "completed", {
         "chunks_retrieved": len(retrieved), "top_similarity_score": top_score,
         "threshold_passed": passed,
-    }))
+    }, retrieve_ms))
 
     if not passed:
         trace.append(_step("SimilarityThreshold", "failed", {
@@ -103,20 +109,23 @@ def _custom_core(question, filter_filenames, store, settings, top_k) -> dict:
         "top_score": top_score, "threshold": settings.similarity_threshold, "result": "continue",
     }))
 
+    t = time.perf_counter()
     ranked = ranker.ranker_agent(query, retrieved, top_k=settings.top_k_rerank)
     trace.append(_step("RankerAgent", "completed", {
         "model": settings.reranker_model, "chunks_in": len(retrieved), "chunks_out": len(ranked),
-    }))
+    }, _ms(t)))
 
+    t = time.perf_counter()
     result = reasoner.reasoner_agent(question, ranked)
     trace.append(_step("ReasonerAgent", "completed", {
         "confidence": result["confidence"], "sources_used": result["sources_used"],
-    }))
+    }, _ms(t)))
 
+    t = time.perf_counter()
     validation = validator.validator_agent(question, result["answer"], ranked)
     trace.append(_step("ValidatorAgent", "completed", {
         "is_valid": validation["is_valid"], "hallucination_risk": validation["hallucination_risk"],
-    }))
+    }, _ms(t)))
 
     return {
         "success": True, "short_circuit": False, "short_circuit_reason": None,
@@ -148,9 +157,9 @@ def _llama_core(question, filter_filenames, store, top_k) -> dict:
 
 # ── compare mode (C-E) ────────────────────────────────────────────────────────
 
-def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, started) -> dict:
+def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, safety_ms, started) -> dict:
     custom_started = time.perf_counter()
-    custom = _custom_core(question, filter_filenames, store, settings, top_k)
+    custom = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
     custom_ms = int((time.perf_counter() - custom_started) * 1000)
 
     # The llama side runs regardless of whether custom short-circuited. (C-E)
@@ -241,3 +250,7 @@ def _public_chunks(chunks) -> list[dict]:
 
 def _step(agent, status, details, duration_ms=0) -> dict:
     return {"agent": agent, "status": status, "details": details, "duration_ms": duration_ms}
+
+
+def _ms(start) -> int:
+    return int((time.perf_counter() - start) * 1000)

@@ -272,6 +272,26 @@ def test_pipeline_compare_envelope_shape(monkeypatch, indexed_store):
     assert out["short_circuit"] is False
 
 
+def test_pipeline_trace_records_real_step_durations(monkeypatch, indexed_store):
+    import time as _time
+
+    def slow_complete(system, user, **kw):
+        _time.sleep(0.02)  # 20ms per LLM call
+        return _route_complete(system, user, **kw)
+
+    monkeypatch.setattr(llm, "complete", slow_complete)
+    _set_threshold(monkeypatch, "0.0")
+    out = pipeline.run_pipeline("When can patients transfer?", agent_mode="custom",
+                                store=indexed_store, include_trace=True)
+
+    durations = {s["agent"]: s["duration_ms"] for s in out["trace"]}
+    # The LLM steps actually slept, so their measured durations must be > 0
+    # (guards against the old hardcoded duration_ms=0).
+    assert durations["PlannerAgent"] > 0
+    assert durations["ReasonerAgent"] > 0
+    assert durations["ValidatorAgent"] > 0
+
+
 def test_pipeline_unknown_filter_raises(monkeypatch, indexed_store):
     monkeypatch.setattr(llm, "complete", _route_complete)
     with pytest.raises(pipeline.FilterNotFoundError):
