@@ -1,0 +1,28 @@
+# ── Web layer ────────────────────────────────────────────────────────────────
+fastapi>=0.115
+uvicorn[standard]>=0.30
+streamlit>=1.40
+python-multipart>=0.0.9        # FastAPI file uploads
+
+# ── LLM ──────────────────────────────────────────────────────────────────────
+anthropic>=0.39
+
+# ── RAG / retrieval ──────────────────────────────────────────────────────────
+chromadb>=0.5
+sentence-transformers>=3.0     # cross-encoder re-ranker (ms-marco-MiniLM-L-6-v2)
+llama-index>=0.11              # SimpleDirectoryReader + ReActAgent
+
+# ── Document parsing ─────────────────────────────────────────────────────────
+pypdf>=4.2                     # PDF text extraction
+pandas>=2.2                    # CSV / Excel
+openpyxl>=3.1                  # .xlsx / .xls
+python-docx>=1.1               # .docx Word document parsing
+pyyaml>=6.0                    # .yaml / .yml
+chardet>=5.2                   # TXT encoding detection
+python-magic>=0.4.27           # MIME validation. Windows venv: use python-magic-bin
+
+# ── HTTP client (Streamlit → API, and tests) ─────────────────────────────────
+httpx>=0.27
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=8.0
