@@ -9,8 +9,7 @@ anthropic>=0.39
 
 # ── RAG / retrieval ──────────────────────────────────────────────────────────
 chromadb>=0.5
-sentence-transformers>=3.0     # cross-encoder re-ranker (ms-marco-MiniLM-L-6-v2)
-llama-index>=0.11              # SimpleDirectoryReader + ReActAgent
+sentence-transformers>=3.0     # embeddings (all-MiniLM-L6-v2) + cross-encoder re-ranker
 
 # ── Document parsing ─────────────────────────────────────────────────────────
 pypdf>=4.2                     # PDF text extraction

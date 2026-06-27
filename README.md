@@ -23,7 +23,7 @@ An AI-powered document intelligence system that allows users to upload enterpris
 | Mode | Description | LLM calls | Best for |
 |---|---|---|---|
 | `custom` (default) | Sequential 7-step pipeline | 3 fixed | Speed, predictability, full trace |
-| `llama_index` | LlamaIndex ReActAgent loop | 2–8 variable | Complex multi-step reasoning |
+| `llama_index` | Lightweight ReAct loop (Anthropic SDK) | 2–8 variable | Complex multi-step reasoning |
 | `compare` | Runs both, side-by-side results | 5–11 combined | Pipeline evaluation and tuning |
 
 | Step | Type | Model | Purpose |
@@ -255,7 +255,7 @@ See Phase 2 Scope in `/docs` for the full roadmap with implementation details.
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
 | LLM | Claude claude-sonnet-4-6 via Anthropic API |
 | Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
-| Agent framework | LlamaIndex ReActAgent (llama_index and compare modes) |
+| llama_index mode | Lightweight ReAct loop on the Anthropic SDK (full LlamaIndex deferred to Phase 2) |
 | Testing | pytest + httpx |
 | Deployment | Docker Compose (primary) + Python venv (local dev) |
 
