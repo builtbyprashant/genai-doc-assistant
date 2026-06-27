@@ -150,6 +150,16 @@ class VectorStore:
                 doc["chunks"] += 1
         return list(docs.values())
 
+    def existing_filenames(self) -> set[str]:
+        """Filenames currently in the index — used to validate a query filter."""
+        data = self._collection.get(include=["metadatas"])
+        return {meta["filename"] for meta in data["metadatas"]}
+
+    def unknown_filenames(self, filenames: list[str]) -> list[str]:
+        """Of the requested filenames, which are not indexed (→ filter-not-found)."""
+        known = self.existing_filenames()
+        return [name for name in filenames if name not in known]
+
     def chunk_count(self) -> int:
         return self._collection.count()
 

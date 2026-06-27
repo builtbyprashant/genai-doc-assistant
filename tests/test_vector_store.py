@@ -104,6 +104,19 @@ def test_delete_unknown_filename_removes_nothing(store):
     assert store.chunk_count() == 1
 
 
+def test_existing_filenames(store):
+    store.index_chunks("d1", "a.txt", _chunks("x"), "h1", 1)
+    store.index_chunks("d2", "b.txt", _chunks("y"), "h2", 1)
+    assert store.existing_filenames() == {"a.txt", "b.txt"}
+
+
+def test_unknown_filenames_flags_missing(store):
+    # Supports the pipeline's filter-not-found check (Layer 4 input validation).
+    store.index_chunks("d1", "a.txt", _chunks("x"), "h", 1)
+    assert store.unknown_filenames(["a.txt", "ghost.txt"]) == ["ghost.txt"]
+    assert store.unknown_filenames(["a.txt"]) == []
+
+
 def test_list_documents_aggregates_by_file(store):
     store.index_chunks("d1", "a.txt", _chunks("one", "two"), "hash-a", 100)
     store.index_chunks("d2", "b.txt", _chunks("three"), "hash-b", 200)
