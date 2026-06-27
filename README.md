@@ -51,11 +51,11 @@ An AI-powered document intelligence system that allows users to upload enterpris
 git clone https://github.com/builtbyprashant/genai-doc-assistant
 cd genai-doc-assistant
 
-# 2. Configure environment
-cp .env.example .env
-# Open .env and add your ANTHROPIC_API_KEY
+# 2. Provide your API key via your shell environment (no .env file needed)
+#    PowerShell:  $env:ANTHROPIC_API_KEY = "sk-ant-..."
+#    bash:        export ANTHROPIC_API_KEY=sk-ant-...
 
-# 3. Start the system
+# 3. Start the system (reads ANTHROPIC_API_KEY from your shell)
 docker compose up --build
 
 # 4. Open in browser
