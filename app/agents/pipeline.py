@@ -104,6 +104,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
             "similarity_threshold_not_met", trace,
             f"Top retrieved chunk scored {top_score:.2f}, below the threshold of "
             f"{settings.similarity_threshold:.2f}. No relevant content found.",
+            llm_calls=1,  # the Planner already ran before the threshold gate
         )
     trace.append(_step("SimilarityThreshold", "passed", {
         "top_score": top_score, "threshold": settings.similarity_threshold, "result": "continue",

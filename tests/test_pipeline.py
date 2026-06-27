@@ -236,6 +236,15 @@ def test_pipeline_below_threshold_short_circuits(monkeypatch, indexed_store):
     assert out["confidence"] == "n/a"
 
 
+def test_threshold_short_circuit_counts_the_planner_call(monkeypatch, indexed_store):
+    from app.core.config import get_settings
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    _set_threshold(monkeypatch, "0.99")  # nothing clears it → threshold short-circuit
+    core = pipeline._custom_core("totally unrelated query", None, indexed_store, get_settings(), 10)
+    assert core["short_circuit"] is True
+    assert core["llm_calls"] == 1  # Planner ran before the gate (not 0)
+
+
 def test_pipeline_custom_happy_path(monkeypatch, indexed_store):
     monkeypatch.setattr(llm, "complete", _route_complete)
     _set_threshold(monkeypatch, "0.0")  # let everything through
