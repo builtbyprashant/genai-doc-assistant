@@ -1,0 +1,4 @@
+# Frontend runtime — the Streamlit UI. It talks to the backend over HTTP only,
+# so it needs none of the ML / RAG stack (no torch, chromadb, sentence-transformers).
+streamlit>=1.40
+httpx>=0.27

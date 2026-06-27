@@ -308,10 +308,12 @@ genai-doc-assistant/
 ├── tests/                       ← pytest test suite
 ├── data/                        ← uploaded documents (gitignored)
 ├── docs/                        ← design documentation (published after cleanup)
-├── requirements.txt
+├── requirements.txt             ← backend runtime
+├── requirements-frontend.txt    ← Streamlit UI deps (no ML stack)
+├── requirements-dev.txt         ← backend + test toolchain
 ├── docker-compose.yml
-├── Dockerfile.backend
-├── Dockerfile.frontend
+├── Dockerfile.backend           ← CPU-only torch; pre-downloads encoders
+├── Dockerfile.frontend          ← streamlit + httpx only
 ├── .env.example
 ├── .gitignore
 ├── setup_venv.sh

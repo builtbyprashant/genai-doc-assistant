@@ -9,8 +9,11 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install deps first so this layer caches when only app code changes.
+# CPU-only torch is installed first so sentence-transformers does NOT pull the
+# ~2.5GB of NVIDIA CUDA wheels (this app runs inference on CPU).
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Bake the sentence-transformer models into the image so runtime needs no
 # network for them (~80MB each: embedder + cross-encoder re-ranker).
