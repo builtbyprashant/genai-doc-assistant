@@ -43,6 +43,32 @@ def _cache_kwargs(system: str, cache_mode: str) -> dict:
     return {"system": [{"type": "text", "text": system, "cache_control": _EPHEMERAL}]}
 
 
+def _build_request(system: str, user: str, cache_context: Optional[str], cache_mode: str) -> dict:
+    """Build the `system` + `messages` kwargs for a request (DECISIONS: D-16).
+
+    When `cache_context` is given (and caching is on), the large, stable CONTEXT becomes
+    its own `cache_control` block at the head of the user message, with the agent-specific
+    task trailing it *uncached*. Two calls that share the same system + context — e.g. the
+    Reasoner then the Validator on the same retrieved chunks — produce an identical cached
+    prefix, so the second call reads it instead of re-processing the context. (This is the
+    only structure that actually caches anything here: the system prompts are ~100 tokens,
+    far below the model's minimum cacheable length, so block-level system caching never
+    fires — D-12. The context block is where the tokens, and the reuse, actually are.)
+
+    Falls back to the original per-system strategy when there is no large context to cache
+    (e.g. the Planner) or caching is off.
+    """
+    if cache_context and cache_mode != "off":
+        return {
+            "system": system,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": cache_context, "cache_control": _EPHEMERAL},
+                {"type": "text", "text": user},
+            ]}],
+        }
+    return {"messages": [{"role": "user", "content": user}], **_cache_kwargs(system, cache_mode)}
+
+
 def _log_usage(agent: Optional[str], usage, cache_mode: str) -> None:
     """Log token usage incl. cache hits/writes so caching effectiveness is observable.
 
@@ -121,22 +147,24 @@ def get_client() -> anthropic.Anthropic:
 
 
 def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
-             usage: Optional[dict] = None) -> str:
+             usage: Optional[dict] = None, cache_context: Optional[str] = None) -> str:
     """Send one system+user turn to Claude, with the blanket retry policy.
 
-    `agent` labels the call so a failure reports which agent it failed at. The system
-    prompt is cached per the configured strategy (block / prompt / off — D-12); it is
-    identical across calls for a given agent, so block-level caching gives cache reads
-    after the first use. Cache + token usage is logged; if `usage` (a `new_usage()`
-    dict) is passed, this call's tokens are added to it for the per-query total.
+    `agent` labels the call so a failure reports which agent it failed at. Pass
+    `cache_context` (the large, stable retrieved CONTEXT) to cache it as a prefix block so
+    a later call sharing the same system + context reads it from cache (D-16). Cache +
+    token usage is logged; if `usage` (a `new_usage()` dict) is passed, this call's tokens
+    are added to it for the per-query total.
     """
-    text, u = call_with_retry(_raw_complete, system, user, max_tokens, agent=agent)
+    text, u = call_with_retry(_raw_complete, system, user, max_tokens,
+                              agent=agent, cache_context=cache_context)
     _log_usage(agent, u, get_settings().cache_mode)
     _accumulate(usage, u)
     return text
 
 
-def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[float] = None):
+def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[float] = None,
+                  cache_context: Optional[str] = None):
     settings = get_settings()
     client = get_client()
     if timeout is not None:
@@ -145,19 +173,18 @@ def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[flo
     response = client.messages.create(
         model=settings.anthropic_model,
         max_tokens=max_tokens,
-        messages=[{"role": "user", "content": user}],
-        **_cache_kwargs(system, settings.cache_mode),
+        **_build_request(system, user, cache_context, settings.cache_mode),
     )
     return response.content[0].text, response.usage
 
 
 def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
-                usage: Optional[dict] = None):
+                usage: Optional[dict] = None, cache_context: Optional[str] = None):
     """Yield answer text deltas as the model generates them.
 
     Unlike `complete()`, there is no retry wrapper — a stream can't be transparently
     re-driven once bytes have been sent to the client. Connection errors propagate to
-    the caller. Caching follows the same strategy as `complete()` (D-12); cache/token
+    the caller. Caching follows the same strategy as `complete()` (D-16); cache/token
     usage is logged once the stream completes.
     """
     settings = get_settings()
@@ -165,8 +192,7 @@ def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[s
     with client.messages.stream(
         model=settings.anthropic_model,
         max_tokens=max_tokens,
-        messages=[{"role": "user", "content": user}],
-        **_cache_kwargs(system, settings.cache_mode),
+        **_build_request(system, user, cache_context, settings.cache_mode),
     ) as stream:
         yield from stream.text_stream
         try:

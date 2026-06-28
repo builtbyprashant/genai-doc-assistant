@@ -68,14 +68,15 @@ def test_reasoner_sends_context_and_only_rule_to_llm(monkeypatch, chunks):
     def fake_complete(system, user, **kw):
         captured["system"] = system
         captured["user"] = user
+        captured["cache_context"] = kw.get("cache_context")
         return "ANSWER: ok\nCONFIDENCE: HIGH\nSOURCES: icu.txt"
 
     monkeypatch.setattr(llm, "complete", fake_complete)
     reasoner.reasoner_agent("When can patients transfer?", chunks)
 
-    assert "ONLY" in captured["system"]                      # the grounding rule
-    assert "four hours of stability" in captured["user"]     # the chunk text
-    assert "When can patients transfer?" in captured["user"] # the question
+    assert "ONLY" in captured["system"]                              # the grounding rule
+    assert "four hours of stability" in captured["cache_context"]    # chunk text → cached block
+    assert "When can patients transfer?" in captured["user"]         # the question
 
 
 # ── PlannerAgent (Task 8) ─────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ def test_validator_sees_only_question_answer_context(monkeypatch, chunks):
 
     def fake(system, user, **kw):
         captured["user"] = user
+        captured["cache_context"] = kw.get("cache_context")
         return '{"is_valid": true, "hallucination_risk": "low"}'
 
     monkeypatch.setattr(llm, "complete", fake)
@@ -152,7 +154,7 @@ def test_validator_sees_only_question_answer_context(monkeypatch, chunks):
     # Independence (D-5): the answer, question and context are present...
     assert "After four hours." in captured["user"]
     assert "When can patients transfer?" in captured["user"]
-    assert "attending physician" in captured["user"]
+    assert "attending physician" in captured["cache_context"]   # context → cached block
     # ...and there is no place to leak the reasoner's chain — the function simply
     # has no parameter for it (enforced by signature).
 
@@ -196,14 +198,17 @@ def indexed_store(tmp_path):
 
 
 def _route_complete(system, user, **kw):
-    """One mock that answers as whichever agent is calling, by system prompt."""
-    if "rewritten_query" in system:                     # planner
+    """One mock that answers as whichever agent is calling. The Reasoner/Validator now
+    share a grounding system (D-16), so their identifying markers live in the user task;
+    route on system + user to cover both placements."""
+    blob = f"{system}\n{user}"
+    if "rewritten_query" in blob:                       # planner
         return '{"intent": "transfer", "retrieval_strategy": "semantic", "rewritten_query": "ICU transfer"}'
-    if "ANSWER:" in system and "CONFIDENCE:" in system:  # reasoner
-        return "ANSWER: Transfer after four hours.\nCONFIDENCE: HIGH\nSOURCES: icu.txt"
-    if "is_valid" in system:                            # validator
+    if "is_valid" in blob:                              # validator (unique marker, check first)
         return '{"is_valid": true, "issues": [], "hallucination_risk": "low", "suggested_action": "none"}'
-    if "FINAL:" in system or "SEARCH:" in system:        # llama ReAct loop
+    if "ANSWER:" in blob and "CONFIDENCE:" in blob:     # reasoner
+        return "ANSWER: Transfer after four hours.\nCONFIDENCE: HIGH\nSOURCES: icu.txt"
+    if "FINAL:" in blob or "SEARCH:" in blob:           # llama ReAct loop
         return "FINAL: Patients transfer after four hours of stability."
     return ""
 
@@ -524,6 +529,35 @@ def test_cache_kwargs_prompt_is_top_level():
 
 def test_cache_kwargs_off_has_no_caching():
     assert llm._cache_kwargs("SYS", "off") == {"system": "SYS"}
+
+
+# ── context-block caching: Reasoner→Validator shared prefix (D-16) ─────────────
+
+def test_build_request_caches_context_block():
+    req = llm._build_request("SYS", "the task", "CONTEXT:\nbig text", "block")
+    blocks = req["messages"][0]["content"]
+    assert req["system"] == "SYS"                                  # shared system, plain text
+    assert blocks[0]["text"] == "CONTEXT:\nbig text"               # context first…
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}     # …and it is the cached block
+    assert blocks[1]["text"] == "the task"                         # task trails it, uncached
+    assert "cache_control" not in blocks[1]
+
+
+def test_build_request_off_mode_has_no_cache_block():
+    req = llm._build_request("SYS", "u", "CONTEXT: big", "off")
+    assert req["messages"][0]["content"] == "u"   # plain string — no cache_control anywhere
+    assert req["system"] == "SYS"
+
+
+def test_reasoner_and_validator_share_cached_context_prefix():
+    # The win: both build the SAME (system, CONTEXT block), so the Validator reads the
+    # context the Reasoner cached instead of re-processing it. (D-16)
+    chunks = [{"id": "c1", "filename": "a.txt", "text": "alpha beta", "similarity_score": 0.9,
+               "chunk_index": 0, "rerank_score": 0.9}]
+    r_ctx, _ = reasoner.build_prompt("q", chunks)
+    v_ctx = "CONTEXT:\n" + "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
+    assert r_ctx == v_ctx                                            # identical cached block
+    assert validator.GROUNDING_SYSTEM == reasoner.GROUNDING_SYSTEM   # identical system
 
 
 def test_invalid_cache_mode_rejected(monkeypatch):

@@ -11,12 +11,19 @@ from app.agents import llm
 
 REASONER_MAX_TOKENS = 800
 
-REASONER_SYSTEM = """You answer questions strictly from the provided CONTEXT.
+# Shared grounding system used by BOTH the Reasoner and the Validator. Keeping it identical
+# (and short) is deliberate: the cached prefix is `system + CONTEXT block`, so a shared
+# system lets the Validator read the context the Reasoner just cached (DECISIONS: D-16). The
+# critical ONLY-rule guardrail stays at the system level; each agent's specific task trails
+# the cached context in the user message.
+GROUNDING_SYSTEM = (
+    "You work strictly from the CONTEXT provided in the user message. Use ONLY that "
+    "context — never outside or prior knowledge — and follow the task instructions exactly."
+)
 
-Rules:
-- Use ONLY the information in the CONTEXT. Never use outside or prior knowledge.
-- If the CONTEXT does not contain the answer, say you cannot answer from the
-  provided documents — do not guess.
+REASONER_TASK = """TASK: Answer the QUESTION using only the CONTEXT above.
+- If the CONTEXT does not contain the answer, say you cannot answer from the provided
+  documents — do not guess.
 - Keep the answer concise and factual.
 
 Respond in EXACTLY this format:
@@ -26,14 +33,22 @@ REASON: <one short sentence on why>
 SOURCES: <comma-separated source filenames you used>"""
 
 
+def build_prompt(question: str, chunks: list[dict]) -> tuple[str, str]:
+    """Return `(cache_context, user)`. `cache_context` is the cacheable CONTEXT block —
+    byte-identical to the Validator's for the same chunks, so the Validator call reads it
+    from cache (D-16). Used by both the streaming and non-streaming Reasoner paths so they
+    build the exact same prefix."""
+    context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
+    return f"CONTEXT:\n{context}", f"QUESTION: {question}\n\n{REASONER_TASK}"
+
+
 def reasoner_agent(question: str, chunks: list[dict], usage: dict | None = None) -> dict:
     """Return a grounded answer dict: answer, confidence, confidence_reason, sources_used."""
     available = [c["filename"] for c in chunks]
-    context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
-    user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
+    cache_context, user = build_prompt(question, chunks)
 
-    raw = llm.complete(REASONER_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS,
-                       agent="ReasonerAgent", usage=usage)
+    raw = llm.complete(GROUNDING_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS,
+                       agent="ReasonerAgent", usage=usage, cache_context=cache_context)
     return _parse_response(raw, available)
 
 

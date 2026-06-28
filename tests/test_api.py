@@ -25,13 +25,16 @@ def _file(name, body=b"This is a policy document about ICU discharge and transfe
 
 
 def _route_complete(system, user, **kw):
-    if "rewritten_query" in system:
+    # Reasoner/Validator share a grounding system (D-16); their markers live in the user
+    # task now, so route on system + user.
+    blob = f"{system}\n{user}"
+    if "rewritten_query" in blob:
         return '{"intent": "x", "retrieval_strategy": "semantic", "rewritten_query": "ICU transfer"}'
-    if "ANSWER:" in system and "CONFIDENCE:" in system:
-        return "ANSWER: Transfer after four hours.\nCONFIDENCE: HIGH\nSOURCES: icu.txt"
-    if "is_valid" in system:
+    if "is_valid" in blob:
         return '{"is_valid": true, "issues": [], "hallucination_risk": "low", "suggested_action": "none"}'
-    if "FINAL:" in system or "SEARCH:" in system:
+    if "ANSWER:" in blob and "CONFIDENCE:" in blob:
+        return "ANSWER: Transfer after four hours.\nCONFIDENCE: HIGH\nSOURCES: icu.txt"
+    if "FINAL:" in blob or "SEARCH:" in blob:
         return "FINAL: Patients transfer after four hours."
     return ""
 

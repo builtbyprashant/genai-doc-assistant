@@ -12,11 +12,15 @@ a response. (Requirements §3.3)
 from __future__ import annotations
 
 from app.agents import llm
+from app.agents.reasoner import GROUNDING_SYSTEM
 
-VALIDATOR_SYSTEM = """You judge whether an ANSWER is fully supported by the CONTEXT.
-
-You are given only the question, the answer, and the context — not how the answer
-was generated. Judge solely on whether the context backs up the answer.
+# The Validator shares the Reasoner's grounding system and re-states the same CONTEXT block,
+# so its prefix matches the one the Reasoner just cached → the context is read from cache,
+# not re-processed (DECISIONS: D-16). Independence is preserved: it still sees only the
+# question, answer, and context — never the Reasoner's reasoning (D-5).
+VALIDATOR_TASK = """TASK: Judge whether the ANSWER is fully supported by the CONTEXT above.
+You are given only the question, the answer, and the context — not how the answer was
+generated. Judge solely on whether the context backs up the answer.
 
 Return ONLY a JSON object, no other text:
 {
@@ -30,9 +34,11 @@ Return ONLY a JSON object, no other text:
 def validator_agent(question: str, answer: str, chunks: list[dict], usage: dict | None = None) -> dict:
     """Validate an answer against its context. Returns the validation dict."""
     context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
-    user = f"QUESTION: {question}\n\nANSWER: {answer}\n\nCONTEXT:\n{context}"
+    cache_context = f"CONTEXT:\n{context}"
+    user = f"QUESTION: {question}\n\nANSWER: {answer}\n\n{VALIDATOR_TASK}"
 
-    raw = llm.complete(VALIDATOR_SYSTEM, user, max_tokens=300, agent="ValidatorAgent", usage=usage)
+    raw = llm.complete(GROUNDING_SYSTEM, user, max_tokens=300, agent="ValidatorAgent",
+                       usage=usage, cache_context=cache_context)
     return _safe_validation(raw)
 
 

@@ -459,15 +459,17 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
     }, _ms(t)))
 
     # Stream the Reasoner's answer token-by-token, hiding the structured scaffolding.
+    # Same prompt build as reasoner_agent → the streamed call caches the CONTEXT block that
+    # the Validator then reads (D-16).
     available = [c["filename"] for c in ranked]
-    context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in ranked)
-    user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
+    cache_context, user = reasoner.build_prompt(question, ranked)
     t = time.perf_counter()
     raw = ""
     extractor = _AnswerExtractor(start="ANSWER:", stop="CONFIDENCE:")
-    for delta in llm.stream_text(reasoner.REASONER_SYSTEM, user,
+    for delta in llm.stream_text(reasoner.GROUNDING_SYSTEM, user,
                                  max_tokens=reasoner.REASONER_MAX_TOKENS,
-                                 agent="ReasonerAgent", usage=usage):
+                                 agent="ReasonerAgent", usage=usage,
+                                 cache_context=cache_context):
         raw += delta
         emit = extractor.feed(raw)
         if emit:
