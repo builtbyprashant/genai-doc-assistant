@@ -205,13 +205,17 @@ See `.env.example` for all options with descriptions.
 
 ### Prompt caching
 
-Anthropic prompt caching is supported in two forms, selected by `ANTHROPIC_CACHE_MODE`:
+`ANTHROPIC_CACHE_MODE` (`block` default | `prompt` | `off`) toggles Anthropic prompt caching. The
+thing actually cached is the **retrieved CONTEXT block**, not the system prompt: within one query
+the **Reasoner and Validator process the same context**, so the Reasoner writes it to cache and the
+Validator reads it instead of re-processing it. The context is placed in its own `cache_control`
+block at the head of the user message, with the agent-specific task trailing it uncached; both
+agents share a grounding system so the cached prefix matches.
 
-| Mode | What it does | Best for |
-|---|---|---|
-| `block` (default) | **Block-level** — the system prompt is its own cacheable block (`cache_control` on the system block). | This app: each agent's system prompt is identical across queries, so it's served from cache after the first call. |
-| `prompt` | **Prompt-level** — a top-level `cache_control` marker caches the whole prompt prefix (the SDK applies it to the last block). | A long prefix that repeats verbatim (e.g. multi-turn). For single-turn RAG the changing question/context limits reuse. |
-| `off` | No caching. | Debugging / comparison. |
+> **Why not cache the system prompts?** They're ~100 tokens each — below the model's minimum
+> cacheable length (~2048 for Haiku, ~1024 for Sonnet/Opus), so `cache_control` on them is silently
+> ignored. Caching only pays off on the large CONTEXT, and only when it clears that floor (bigger
+> documents / more chunks, or a Sonnet/Opus model). Verify with the logs below — `off` disables it.
 
 Cache effectiveness is **observable in the logs**: every LLM call emits an `llm_usage` event with `cache_read_input_tokens` (served from cache) and `cache_creation_input_tokens` (written to cache):
 
