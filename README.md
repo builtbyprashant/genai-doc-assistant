@@ -58,7 +58,11 @@ In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-t
 > answer quality. In `custom` mode the answer is also **streamed** to the UI token-by-token, so the
 > first words appear in ~2–4 s instead of after the whole answer is written.
 
-**Built from scratch.** We implemented three pipeline modes using only the Anthropic SDK and ChromaDB. The `custom` mode is a fixed sequential pipeline optimised for predictability. The `llama_index` mode implements the ReAct reasoning pattern — the same pattern LlamaIndex's ReActAgent uses internally — without the framework dependency. `compare` mode runs both on the same query for evaluation. A future version replaces our custom ReAct loop with the real LlamaIndex binding.
+> **Observability.** Every answer shows its **confidence**, **latency**, **tokens consumed**, and an
+> **estimated cost** (per side in `compare` mode), so the speed/quality/cost tradeoff between modes —
+> and the savings from prompt caching — are visible at a glance.
+
+**Built from scratch.** We implemented three pipeline modes using only the Anthropic SDK and ChromaDB. The `custom` mode is a fixed sequential pipeline optimised for predictability. The `llama_index` mode implements the ReAct reasoning pattern — the same pattern LlamaIndex's ReActAgent uses internally — without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation. A future version replaces our custom ReAct loop with the real LlamaIndex binding.
 
 ---
 
