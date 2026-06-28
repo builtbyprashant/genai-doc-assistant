@@ -572,3 +572,24 @@ def test_complete_logs_cache_usage(monkeypatch):
     assert captured["agent"] == "ReasonerAgent"
     assert captured["cache_read_input_tokens"] == 95
     assert captured["cache_mode"] in ("block", "prompt", "off")
+
+
+def test_llama_trace_steps_are_action_labelled(monkeypatch, indexed_store):
+    # One SEARCH, then forced FINAL synthesis on the last turn.
+    def mock(system, user, **kw):
+        if "SEARCH:" in system or "FINAL:" in system:   # LLAMA_SYSTEM → keep searching
+            return "SEARCH: more detail"
+        return "Synthesized answer."                    # FINAL_SYNTHESIS_SYSTEM
+    monkeypatch.setattr(llm, "complete", mock)
+    out = llama_agent.run_llama_agent("question", indexed_store)
+    agents = [s["agent"] for s in out["trace"]]
+    assert any(a.startswith("LlamaReAct · Search") for a in agents)
+    assert any(a.startswith("LlamaReAct · Synthesize") for a in agents)
+
+
+def test_compare_marks_which_pipeline_was_validated(monkeypatch, indexed_store):
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    _set_threshold(monkeypatch, "0.0")  # custom answers → its answer is validated
+    out = pipeline.run_pipeline("When can ICU patients transfer?", agent_mode="compare",
+                                store=indexed_store)
+    assert out["validated_pipeline"] == "Custom pipeline"

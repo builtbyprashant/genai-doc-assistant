@@ -184,15 +184,20 @@ def _run_compare(question, filter_filenames, include_chunks, include_trace, stor
     llama_ms = int((time.perf_counter() - llama_started) * 1000)
 
     short_circuit = custom["short_circuit"]
-    # Validation targets the custom answer normally; if custom short-circuited it
-    # has no answer, so validate the llama answer instead. (C-E)
+    # The Validator is a custom-pipeline agent (D-5); llama self-rates confidence instead.
+    # So validation targets the custom answer normally; if custom short-circuited it has no
+    # answer, so validate the llama answer instead. (C-E) `validated_pipeline` lets the UI
+    # label which side's answer the check ran on (it's not a neutral comparison verdict).
     if short_circuit:
-        validation = (
-            validator.validator_agent(question, llama["answer"], llama["chunks"], usage=llama_usage)
-            if llama["answer"] else dict(_NEUTRAL_VALIDATION)
-        )
+        if llama["answer"]:
+            validation = validator.validator_agent(question, llama["answer"], llama["chunks"], usage=llama_usage)
+            validated_pipeline = "LlamaIndex ReAct"
+        else:
+            validation = dict(_NEUTRAL_VALIDATION)
+            validated_pipeline = None
     else:
         validation = custom["validation"]
+        validated_pipeline = "Custom pipeline"
 
     custom_tok = llm.summarize_usage(custom_usage, settings.anthropic_model)
     llama_tok = llm.summarize_usage(llama_usage, settings.anthropic_model)
@@ -210,6 +215,7 @@ def _run_compare(question, filter_filenames, include_chunks, include_trace, stor
         "custom": _compare_side(custom, custom_ms, include_chunks, include_trace, custom_tok),
         "llama_index": _compare_side(llama, llama_ms, include_chunks, include_trace, llama_tok),
         "validation": validation,
+        "validated_pipeline": validated_pipeline,
     }
 
 

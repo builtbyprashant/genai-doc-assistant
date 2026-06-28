@@ -349,7 +349,13 @@ elif result and result.get("mode") == "compare":
                 if side["sources_used"]:
                     st.caption(f"Sources: {', '.join(side['sources_used'])}")
     v = result["validation"]
-    st.caption(f"Validation: {'✓ valid' if v['is_valid'] else '⚠ flagged'} · hallucination risk: {v['hallucination_risk']}")
+    who = result.get("validated_pipeline")
+    if who:
+        st.caption(
+            f"Validation ({who}): {'✓ valid' if v['is_valid'] else '⚠ flagged'}"
+            f" · hallucination risk: {v['hallucination_risk']}"
+            "  ·  LlamaIndex self-rates its own confidence (no separate validator)."
+        )
 
 elif result:
     if result["short_circuit"]:

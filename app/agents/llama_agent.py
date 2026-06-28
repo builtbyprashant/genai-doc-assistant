@@ -108,8 +108,11 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
 
 
 def _step(step: int, action: str, duration_ms: int = 0, **extra) -> dict:
-    return {"agent": "LlamaReAct", "status": "completed",
-            "details": {"step": step, "action": action, **extra}, "duration_ms": duration_ms}
+    # Label each step by its action so the trace reads as the ReAct loop it is
+    # (Search → Search → … → Synthesize) instead of a wall of identical "LlamaReAct".
+    label = {"search": "Search", "final": "Synthesize"}.get(action, action.title())
+    return {"agent": f"LlamaReAct · {label}", "status": "completed",
+            "details": {"step": step, **extra}, "duration_ms": duration_ms}
 
 
 def _split_confidence(text: str) -> tuple[str, str]:
