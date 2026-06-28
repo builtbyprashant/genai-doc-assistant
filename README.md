@@ -16,6 +16,18 @@ An AI-powered document intelligence system that allows users to upload enterpris
 
 ---
 
+## What Makes This Different
+
+Most RAG systems give you one pipeline and one answer. This system gives you **two architecturally distinct pipelines** and lets you **compare them side by side**.
+
+- **`custom` mode** is a fixed 7-step sequential pipeline: deterministic, fully traced, optimised for predictability. Every step is visible, including which chunks were retrieved, how they were reranked, and what confidence the Validator assigned.
+- **`llama_index` mode** implements the ReAct reasoning pattern internally, the same Think → Search → Observe loop that powers LlamaIndex's ReActAgent, built from scratch on the Anthropic SDK. Instead of a fixed retrieval pass, it decides dynamically when to search again and when it has enough to answer.
+- **`compare` mode** runs both pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. This turns the system into a live experimentation and fine-tuning workbench, where you can see exactly where the two approaches diverge, which chunks each pipeline found, and where one outperforms the other.
+
+Built for engineers who want to understand what is happening inside their RAG pipeline, not just get an answer out of it.
+
+---
+
 ## Architecture
 
 ```text
