@@ -24,12 +24,16 @@ After FINAL, add a line:  CONFIDENCE: HIGH | MEDIUM | LOW
 Use only the provided context. If it is still insufficient after searching, give
 your best FINAL answer and note the gap."""
 
-# Used on the last turn to force a direct answer from what was gathered, rather
-# than exhausting the search budget and giving up.
-FINAL_SYNTHESIS_SYSTEM = (
-    "Answer the question using ONLY the provided context. Be direct and concise. "
-    "If the context genuinely does not contain the answer, say so briefly. "
-    "End with a line:  CONFIDENCE: HIGH | MEDIUM | LOW"
+# Per-turn instructions live in the user message, AFTER the cached CONTEXT block (D-16), so
+# the [system + QUESTION + CONTEXT] prefix is identical across turns and the growing context
+# is read from cache each turn. The whole loop — including the forced answer — uses
+# LLAMA_SYSTEM, so the synthesis turn shares the cached context with the search turns (rather
+# than a separate synthesis system, which couldn't).
+NEXT_ACTION = "Your next action:"
+FORCE_FINAL = (
+    "You have used all available search turns. Reply now with your FINAL answer using ONLY "
+    "the context above; be direct and concise, and if the context does not contain the answer "
+    "say so briefly.\nFINAL: <answer>\nCONFIDENCE: HIGH | MEDIUM | LOW"
 )
 
 MAX_STEPS = 4
@@ -63,15 +67,15 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
     def context_text() -> str:
         return "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
 
-    def synthesize() -> str:
-        # Force a direct answer from everything gathered (used on the last turn and when
-        # the diminishing-returns guard trips), instead of giving up.
-        return llm.complete(
-            FINAL_SYNTHESIS_SYSTEM,
-            f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}\n\n"
-            "Answer the question directly using only this context.",
-            agent="LlamaReAct", usage=usage,
-        )
+    def cache_block() -> str:
+        # The cacheable prefix: question + accumulated context. It grows append-only as
+        # chunks are remembered, so each turn's prefix extends the previous turn's and the
+        # already-seen context is read from cache instead of re-processed (D-16).
+        return f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}"
+
+    def ask(instruction: str) -> str:
+        return llm.complete(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
+                            usage=usage, cache_context=cache_block())
 
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 
@@ -81,22 +85,18 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
         t = time.perf_counter()
 
         if step == MAX_STEPS:
-            raw = synthesize()
+            # Out of search budget — force a direct answer from everything gathered.
+            answer, confidence = _extract_final(ask(FORCE_FINAL))
             llm_calls += 1
-            answer, confidence = _split_confidence(raw)
             trace.append(_step(step, "final", _ms(t), reason="max_steps"))
             break
 
-        raw = llm.complete(
-            LLAMA_SYSTEM,
-            f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}\n\nYour next action:",
-            agent="LlamaReAct", usage=usage,
-        )
+        raw = ask(NEXT_ACTION)
         step_ms = _ms(t)
         llm_calls += 1
 
         if "FINAL:" in raw:
-            answer, confidence = _split_confidence(raw.split("FINAL:", 1)[1])
+            answer, confidence = _extract_final(raw)
             trace.append(_step(step, "final", step_ms))
             break
         if "SEARCH:" in raw:
@@ -109,7 +109,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
             if added == 0 or overlap >= OVERLAP_STOP_RATIO:
                 # Diminishing returns — synthesize now rather than search again.
                 t2 = time.perf_counter()
-                answer, confidence = _split_confidence(synthesize())
+                answer, confidence = _extract_final(ask(FORCE_FINAL))
                 llm_calls += 1
                 trace.append(_step(step, "final", _ms(t2), reason="diminishing_returns"))
                 break
@@ -134,6 +134,13 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
 
 def _ms(t: float) -> int:
     return int((time.perf_counter() - t) * 1000)
+
+
+def _extract_final(raw: str) -> tuple[str, str]:
+    """(answer, confidence) from a FINAL reply — tolerant of the `FINAL:` prefix being
+    present (a chosen or forced final) or absent (the model deviated from the protocol)."""
+    body = raw.split("FINAL:", 1)[1] if "FINAL:" in raw else raw
+    return _split_confidence(body)
 
 
 def _step(step: int, action: str, duration_ms: int = 0, **extra) -> dict:

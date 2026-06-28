@@ -332,9 +332,11 @@ def test_llama_forces_answer_when_search_budget_exhausted(monkeypatch):
     # The model keeps choosing SEARCH and never FINALs, and every search surfaces new
     # chunks (guard never trips); the loop must force a synthesis on the last turn.
     def mock(system, user, **kw):
-        if system.startswith("Answer the question using ONLY"):   # FINAL_SYNTHESIS_SYSTEM
-            return "Synthesized answer from the gathered context."
-        return "SEARCH: more detail"                              # LLAMA_SYSTEM
+        # The whole loop uses LLAMA_SYSTEM now (D-16); the forced-synthesis turn is told to
+        # answer via the FORCE_FINAL user instruction, so route on the user.
+        if user.startswith("You have used all"):                  # forced synthesis
+            return "FINAL: Synthesized answer from the gathered context.\nCONFIDENCE: LOW"
+        return "SEARCH: more detail"                              # keep searching
 
     monkeypatch.setattr(llm, "complete", mock)
     out = llama_agent.run_llama_agent("question", _FreshStore())
@@ -622,11 +624,11 @@ def test_complete_logs_cache_usage(monkeypatch):
 
 
 def test_llama_trace_steps_are_action_labelled(monkeypatch, indexed_store):
-    # One SEARCH, then forced FINAL synthesis on the last turn.
+    # One SEARCH, then forced FINAL synthesis once a search stops surfacing new chunks.
     def mock(system, user, **kw):
-        if "SEARCH:" in system or "FINAL:" in system:   # LLAMA_SYSTEM → keep searching
-            return "SEARCH: more detail"
-        return "Synthesized answer."                    # FINAL_SYNTHESIS_SYSTEM
+        if user.startswith("You have used all"):        # forced synthesis (FORCE_FINAL)
+            return "FINAL: Synthesized.\nCONFIDENCE: LOW"
+        return "SEARCH: more detail"                     # keep searching
     monkeypatch.setattr(llm, "complete", mock)
     out = llama_agent.run_llama_agent("question", indexed_store)
     agents = [s["agent"] for s in out["trace"]]
@@ -650,10 +652,9 @@ def test_llama_stops_on_diminishing_returns(monkeypatch):
     store = _FixedStore(chunks)
 
     def mock(system, user, **kw):
-        # FINAL_SYNTHESIS_SYSTEM starts with "Answer the question using ONLY…"
-        if system.startswith("Answer the question using ONLY"):
-            return "Synthesized answer."
-        return "SEARCH: same thing again"               # LLAMA_SYSTEM → keep searching
+        if user.startswith("You have used all"):        # forced synthesis (FORCE_FINAL)
+            return "FINAL: Synthesized answer.\nCONFIDENCE: LOW"
+        return "SEARCH: same thing again"               # keep searching
     monkeypatch.setattr(llm, "complete", mock)
 
     out = llama_agent.run_llama_agent("question", store)
@@ -662,6 +663,24 @@ def test_llama_stops_on_diminishing_returns(monkeypatch):
     assert out["llm_calls"] == 2
     assert any(s["details"].get("reason") == "diminishing_returns" for s in out["trace"])
     assert out["answer"] == "Synthesized answer."
+
+
+def test_llama_caches_growing_context_prefix(monkeypatch):
+    # Every turn passes the accumulated context as cache_context, and it grows append-only
+    # so turn N+1's prefix extends turn N's → the prior context is read from cache (D-16).
+    captured = []
+
+    def mock(system, user, **kw):
+        captured.append(kw.get("cache_context"))
+        if user.startswith("You have used all"):        # forced synthesis
+            return "FINAL: done.\nCONFIDENCE: LOW"
+        return "SEARCH: more"                            # fresh chunks each time → context grows
+    monkeypatch.setattr(llm, "complete", mock)
+
+    llama_agent.run_llama_agent("q", _FreshStore())
+    assert len(captured) >= 2
+    assert all(c for c in captured)                                       # all carried context
+    assert all(b.startswith(a) for a, b in zip(captured, captured[1:]))   # append-only growth
 
 
 def test_compare_marks_which_pipeline_was_validated(monkeypatch, indexed_store):
