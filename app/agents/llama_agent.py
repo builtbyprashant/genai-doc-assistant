@@ -34,6 +34,12 @@ FINAL_SYNTHESIS_SYSTEM = (
 
 MAX_STEPS = 4
 
+# Diminishing-returns guard: if a SEARCH surfaces this fraction (or more) of chunks the
+# loop has already seen, the model is re-asking the same thing — stop searching and answer
+# from what we have instead of burning the rest of the search budget on redundant retrievals.
+# (A constant alongside MAX_STEPS; adjust to make the loop more/less eager to keep searching.)
+OVERLAP_STOP_RATIO = 0.7
+
 
 def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usage=None) -> dict:
     """Run the loop. Returns answer, sources_used, llm_calls, chunks, trace."""
@@ -44,40 +50,49 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
     trace: list[dict] = []
     llm_calls = 0
 
-    def remember(chunks):
+    def remember(chunks) -> int:
+        """Add only chunks we haven't seen; return how many were newly added."""
+        added = 0
         for chunk in chunks:
             if chunk["id"] not in seen_ids:
                 seen_ids.add(chunk["id"])
                 seen.append(chunk)
+                added += 1
+        return added
+
+    def context_text() -> str:
+        return "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
+
+    def synthesize() -> str:
+        # Force a direct answer from everything gathered (used on the last turn and when
+        # the diminishing-returns guard trips), instead of giving up.
+        return llm.complete(
+            FINAL_SYNTHESIS_SYSTEM,
+            f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}\n\n"
+            "Answer the question directly using only this context.",
+            agent="LlamaReAct", usage=usage,
+        )
 
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 
     answer = ""
     confidence = "medium"
     for step in range(1, MAX_STEPS + 1):
-        context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
         t = time.perf_counter()
 
         if step == MAX_STEPS:
-            # Out of search budget — force a direct answer from everything gathered
-            # instead of returning a "couldn't conclude" message.
-            raw = llm.complete(
-                FINAL_SYNTHESIS_SYSTEM,
-                f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\n"
-                "Answer the question directly using only this context.",
-                agent="LlamaReAct", usage=usage,
-            )
+            raw = synthesize()
             llm_calls += 1
             answer, confidence = _split_confidence(raw)
-            trace.append(_step(step, "final", int((time.perf_counter() - t) * 1000)))
+            trace.append(_step(step, "final", _ms(t), reason="max_steps"))
             break
 
         raw = llm.complete(
             LLAMA_SYSTEM,
-            f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:",
+            f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}\n\nYour next action:",
             agent="LlamaReAct", usage=usage,
         )
-        step_ms = int((time.perf_counter() - t) * 1000)
+        step_ms = _ms(t)
         llm_calls += 1
 
         if "FINAL:" in raw:
@@ -86,8 +101,18 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
             break
         if "SEARCH:" in raw:
             query = raw.split("SEARCH:", 1)[1].splitlines()[0].strip()
-            remember(store.retrieve(query, top_k=top_k, filter_filenames=filter_filenames))
-            trace.append(_step(step, "search", step_ms, query=query))
+            fetched = store.retrieve(query, top_k=top_k, filter_filenames=filter_filenames)
+            added = remember(fetched)
+            overlap = 1.0 - added / len(fetched) if fetched else 1.0
+            trace.append(_step(step, "search", step_ms, query=query,
+                               new_chunks=added, overlap=round(overlap, 2)))
+            if added == 0 or overlap >= OVERLAP_STOP_RATIO:
+                # Diminishing returns — synthesize now rather than search again.
+                t2 = time.perf_counter()
+                answer, confidence = _split_confidence(synthesize())
+                llm_calls += 1
+                trace.append(_step(step, "final", _ms(t2), reason="diminishing_returns"))
+                break
             continue
         # No recognised action → treat the whole reply as the answer.
         answer, confidence = _split_confidence(raw)
@@ -105,6 +130,10 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
         "chunks": seen,
         "trace": trace,
     }
+
+
+def _ms(t: float) -> int:
+    return int((time.perf_counter() - t) * 1000)
 
 
 def _step(step: int, action: str, duration_ms: int = 0, **extra) -> dict:

@@ -310,18 +310,31 @@ def test_pipeline_trace_records_real_step_durations(monkeypatch, indexed_store):
     assert durations["ValidatorAgent"] > 0
 
 
-def test_llama_forces_answer_when_search_budget_exhausted(monkeypatch, indexed_store):
-    # The model keeps choosing SEARCH and never FINALs; the loop must force a
-    # synthesis answer on the last turn instead of giving up.
+class _FreshStore:
+    """Returns brand-new chunks on every query — each search adds material, so the
+    diminishing-returns guard never trips and the loop runs the full budget."""
+    def __init__(self):
+        self.n = 0
+
+    def retrieve(self, query, top_k=None, filter_filenames=None):
+        self.n += 1
+        return [{"id": f"c{self.n}-{i}", "filename": "doc.txt", "text": f"chunk {self.n}-{i}",
+                 "similarity_score": 0.5, "chunk_index": i, "rerank_score": 0.5}
+                for i in range(3)]
+
+
+def test_llama_forces_answer_when_search_budget_exhausted(monkeypatch):
+    # The model keeps choosing SEARCH and never FINALs, and every search surfaces new
+    # chunks (guard never trips); the loop must force a synthesis on the last turn.
     def mock(system, user, **kw):
-        if "SEARCH:" in system or "FINAL:" in system:   # LLAMA_SYSTEM → keep searching
-            return "SEARCH: more detail"
-        return "Synthesized answer from the gathered context."   # FINAL_SYNTHESIS_SYSTEM
+        if system.startswith("Answer the question using ONLY"):   # FINAL_SYNTHESIS_SYSTEM
+            return "Synthesized answer from the gathered context."
+        return "SEARCH: more detail"                              # LLAMA_SYSTEM
 
     monkeypatch.setattr(llm, "complete", mock)
-    out = llama_agent.run_llama_agent("question", indexed_store)
+    out = llama_agent.run_llama_agent("question", _FreshStore())
     assert out["answer"] == "Synthesized answer from the gathered context."
-    assert out["llm_calls"] == llama_agent.MAX_STEPS  # searches + 1 forced synthesis
+    assert out["llm_calls"] == llama_agent.MAX_STEPS  # 3 searches + 1 forced synthesis
     assert "Unable to reach a conclusion" not in out["answer"]
 
 
@@ -585,6 +598,36 @@ def test_llama_trace_steps_are_action_labelled(monkeypatch, indexed_store):
     agents = [s["agent"] for s in out["trace"]]
     assert any(a.startswith("LlamaReAct · Search") for a in agents)
     assert any(a.startswith("LlamaReAct · Synthesize") for a in agents)
+
+
+class _FixedStore:
+    """Returns the same chunks for every query — so a 2nd search adds nothing new."""
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def retrieve(self, query, top_k=None, filter_filenames=None):
+        return self._chunks
+
+
+def test_llama_stops_on_diminishing_returns(monkeypatch):
+    chunks = [{"id": f"c{i}", "filename": "doc.txt", "text": f"chunk {i}",
+               "similarity_score": 0.5, "chunk_index": i, "rerank_score": 0.5}
+              for i in range(3)]
+    store = _FixedStore(chunks)
+
+    def mock(system, user, **kw):
+        # FINAL_SYNTHESIS_SYSTEM starts with "Answer the question using ONLY…"
+        if system.startswith("Answer the question using ONLY"):
+            return "Synthesized answer."
+        return "SEARCH: same thing again"               # LLAMA_SYSTEM → keep searching
+    monkeypatch.setattr(llm, "complete", mock)
+
+    out = llama_agent.run_llama_agent("question", store)
+    # Initial retrieval already holds all 3 chunks; the step-1 SEARCH returns the same set
+    # (0 new) → the guard trips and synthesizes: 1 search call + 1 synthesis = 2, not 4.
+    assert out["llm_calls"] == 2
+    assert any(s["details"].get("reason") == "diminishing_returns" for s in out["trace"])
+    assert out["answer"] == "Synthesized answer."
 
 
 def test_compare_marks_which_pipeline_was_validated(monkeypatch, indexed_store):
