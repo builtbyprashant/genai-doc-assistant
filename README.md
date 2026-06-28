@@ -210,7 +210,9 @@ thing actually cached is the **retrieved CONTEXT block**, not the system prompt:
 the **Reasoner and Validator process the same context**, so the Reasoner writes it to cache and the
 Validator reads it instead of re-processing it. The context is placed in its own `cache_control`
 block at the head of the user message, with the agent-specific task trailing it uncached; both
-agents share a grounding system so the cached prefix matches.
+agents share a grounding system so the cached prefix matches. In `llama_index` mode the whole
+ReAct loop runs on one system and the cached `question + context` block **grows append-only**, so
+each turn (including the final synthesis) reads the previous turn's context from cache.
 
 > **Why not cache the system prompts?** They're ~100 tokens each — below the model's minimum
 > cacheable length (~2048 for Haiku, ~1024 for Sonnet/Opus), so `cache_control` on them is silently
