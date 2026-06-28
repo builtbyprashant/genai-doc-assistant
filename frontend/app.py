@@ -324,6 +324,11 @@ def _fmt_ms(ms: int) -> str:
     return f"{ms} ms" if ms < 1000 else f"{ms / 1000:.1f} s"
 
 
+def _fmt_usage(d: dict) -> str:
+    """Tokens consumed + an estimated cost, e.g. '2,847 tokens · ~$0.0041'."""
+    return f"{d.get('tokens', 0):,} tokens · ~${d.get('cost_usd', 0.0):.4f}"
+
+
 if result and "_error" in result:
     st.error(f"⚠️ {result['_error']}")
 
@@ -336,7 +341,7 @@ elif result and result.get("mode") == "compare":
         with col:
             with st.container(border=True):
                 st.markdown(f"**{title}**")
-                st.caption(f"Confidence {_confidence_badge(side['confidence'])} · {side['llm_calls']} LLM calls · {_fmt_ms(side['duration_ms'])}")
+                st.caption(f"Confidence {_confidence_badge(side['confidence'])} · {side['llm_calls']} LLM calls · {_fmt_ms(side['duration_ms'])} · {_fmt_usage(side)}")
                 st.markdown(_tame_markdown(side["answer"]) or "_(no answer)_")
                 if side["sources_used"]:
                     st.caption(f"Sources: {', '.join(side['sources_used'])}")
@@ -352,6 +357,7 @@ elif result:
         st.caption(
             f"Confidence: {_confidence_badge(result['confidence'])}"
             f" · ⏱ {_fmt_ms(result['processing_time_ms'])}"
+            f" · 🔢 {_fmt_usage(result)}"
             f" · Sources: {', '.join(result['sources_used']) or '—'}"
         )
         risk = result["validation"]["hallucination_risk"]

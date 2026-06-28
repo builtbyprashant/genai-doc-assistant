@@ -27,12 +27,12 @@ Return ONLY a JSON object, no other text:
 }"""
 
 
-def validator_agent(question: str, answer: str, chunks: list[dict]) -> dict:
+def validator_agent(question: str, answer: str, chunks: list[dict], usage: dict | None = None) -> dict:
     """Validate an answer against its context. Returns the validation dict."""
     context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
     user = f"QUESTION: {question}\n\nANSWER: {answer}\n\nCONTEXT:\n{context}"
 
-    raw = llm.complete(VALIDATOR_SYSTEM, user, max_tokens=300, agent="ValidatorAgent")
+    raw = llm.complete(VALIDATOR_SYSTEM, user, max_tokens=300, agent="ValidatorAgent", usage=usage)
     return _safe_validation(raw)
 
 

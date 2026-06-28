@@ -35,7 +35,7 @@ FINAL_SYNTHESIS_SYSTEM = (
 MAX_STEPS = 4
 
 
-def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> dict:
+def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usage=None) -> dict:
     """Run the loop. Returns answer, sources_used, llm_calls, chunks, trace."""
     top_k = top_k or get_settings().top_k_retrieval
 
@@ -65,7 +65,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
                 FINAL_SYNTHESIS_SYSTEM,
                 f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\n"
                 "Answer the question directly using only this context.",
-                agent="LlamaReAct",
+                agent="LlamaReAct", usage=usage,
             )
             llm_calls += 1
             answer, confidence = _split_confidence(raw)
@@ -75,7 +75,7 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None) -> 
         raw = llm.complete(
             LLAMA_SYSTEM,
             f"QUESTION: {question}\n\nCONTEXT:\n{context}\n\nYour next action:",
-            agent="LlamaReAct",
+            agent="LlamaReAct", usage=usage,
         )
         step_ms = int((time.perf_counter() - t) * 1000)
         llm_calls += 1

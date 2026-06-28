@@ -61,20 +61,27 @@ def run_pipeline(
         return _run_compare(question, filter_filenames, include_chunks, include_trace,
                             store, settings, top_k, safety_ms, started, request_id)
 
+    usage = llm.new_usage()
     if agent_mode == "llama_index":
-        core = _llama_core(question, filter_filenames, store, top_k)
+        core = _llama_core(question, filter_filenames, store, top_k, usage=usage)
     else:
-        core = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
+        core = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms, usage=usage)
 
     elapsed_ms = int((time.perf_counter() - started) * 1000)
+    tokens = llm.summarize_usage(usage, settings.anthropic_model)
     _log_completed(question, agent_mode, elapsed_ms, core["trace"], core["llm_calls"],
-                   core["short_circuit"], request_id)
-    return _single_response(question, core, elapsed_ms, include_chunks, include_trace, agent_mode)
+                   core["short_circuit"], request_id,
+                   tokens=tokens["tokens"], cost_usd=tokens["cost_usd"])
+    response = _single_response(question, core, elapsed_ms, include_chunks, include_trace, agent_mode)
+    response["tokens"] = tokens["tokens"]
+    response["cost_usd"] = tokens["cost_usd"]
+    response["cache_read_tokens"] = tokens["cache_read_tokens"]
+    return response
 
 
 # ── custom pipeline ───────────────────────────────────────────────────────────
 
-def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0) -> dict:
+def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0, usage=None) -> dict:
     trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.", safety_ms)]
 
     if store.chunk_count() == 0:
@@ -85,7 +92,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
     _check_filter(filter_filenames, store)
 
     t = time.perf_counter()
-    plan = planner.planner_agent(question)
+    plan = planner.planner_agent(question, usage=usage)
     query = plan["rewritten_query"]
     trace.append(_step("PlannerAgent", "completed", {
         "intent": plan["intent"], "retrieval_strategy": plan["retrieval_strategy"],
@@ -123,13 +130,13 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
     }, _ms(t)))
 
     t = time.perf_counter()
-    result = reasoner.reasoner_agent(question, ranked)
+    result = reasoner.reasoner_agent(question, ranked, usage=usage)
     trace.append(_step("ReasonerAgent", "completed", {
         "confidence": result["confidence"], "sources_used": result["sources_used"],
     }, _ms(t)))
 
     t = time.perf_counter()
-    validation = validator.validator_agent(question, result["answer"], ranked)
+    validation = validator.validator_agent(question, result["answer"], ranked, usage=usage)
     trace.append(_step("ValidatorAgent", "completed", {
         "is_valid": validation["is_valid"], "hallucination_risk": validation["hallucination_risk"],
     }, _ms(t)))
@@ -145,7 +152,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
 
 # ── llama_index mode ──────────────────────────────────────────────────────────
 
-def _llama_core(question, filter_filenames, store, top_k) -> dict:
+def _llama_core(question, filter_filenames, store, top_k, usage=None) -> dict:
     if store.chunk_count() == 0:
         trace = [_step("LlamaReAct", "skipped", "no_documents_indexed")]
         return _short_circuit("no_documents_indexed", trace,
@@ -153,7 +160,7 @@ def _llama_core(question, filter_filenames, store, top_k) -> dict:
 
     _check_filter(filter_filenames, store)
 
-    run = llama_agent.run_llama_agent(question, store, filter_filenames, top_k=top_k)
+    run = llama_agent.run_llama_agent(question, store, filter_filenames, top_k=top_k, usage=usage)
     return {
         "success": True, "short_circuit": False, "short_circuit_reason": None,
         "answer": run["answer"], "confidence": run["confidence"], "confidence_reason": "",
@@ -165,13 +172,15 @@ def _llama_core(question, filter_filenames, store, top_k) -> dict:
 # ── compare mode (C-E) ────────────────────────────────────────────────────────
 
 def _run_compare(question, filter_filenames, include_chunks, include_trace, store, settings, top_k, safety_ms, started, request_id=None) -> dict:
+    # Separate token accumulators so each side reports its own usage + cost.
+    custom_usage, llama_usage = llm.new_usage(), llm.new_usage()
     custom_started = time.perf_counter()
-    custom = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms)
+    custom = _custom_core(question, filter_filenames, store, settings, top_k, safety_ms, usage=custom_usage)
     custom_ms = int((time.perf_counter() - custom_started) * 1000)
 
     # The llama side runs regardless of whether custom short-circuited. (C-E)
     llama_started = time.perf_counter()
-    llama = _llama_core(question, filter_filenames, store, top_k)
+    llama = _llama_core(question, filter_filenames, store, top_k, usage=llama_usage)
     llama_ms = int((time.perf_counter() - llama_started) * 1000)
 
     short_circuit = custom["short_circuit"]
@@ -179,32 +188,38 @@ def _run_compare(question, filter_filenames, include_chunks, include_trace, stor
     # has no answer, so validate the llama answer instead. (C-E)
     if short_circuit:
         validation = (
-            validator.validator_agent(question, llama["answer"], llama["chunks"])
+            validator.validator_agent(question, llama["answer"], llama["chunks"], usage=llama_usage)
             if llama["answer"] else dict(_NEUTRAL_VALIDATION)
         )
     else:
         validation = custom["validation"]
 
+    custom_tok = llm.summarize_usage(custom_usage, settings.anthropic_model)
+    llama_tok = llm.summarize_usage(llama_usage, settings.anthropic_model)
     total_ms = int((time.perf_counter() - started) * 1000)
     _log_completed(question, "compare", total_ms, custom["trace"],
                    custom["llm_calls"] + llama["llm_calls"], short_circuit, request_id,
-                   custom_ms=custom_ms, llama_ms=llama_ms)
+                   custom_ms=custom_ms, llama_ms=llama_ms,
+                   tokens=custom_tok["tokens"] + llama_tok["tokens"],
+                   cost_usd=round(custom_tok["cost_usd"] + llama_tok["cost_usd"], 6))
     return {
         "mode": "compare",
         "processing_time_ms": total_ms,
         "short_circuit": short_circuit,
         "question": question,
-        "custom": _compare_side(custom, custom_ms, include_chunks, include_trace),
-        "llama_index": _compare_side(llama, llama_ms, include_chunks, include_trace),
+        "custom": _compare_side(custom, custom_ms, include_chunks, include_trace, custom_tok),
+        "llama_index": _compare_side(llama, llama_ms, include_chunks, include_trace, llama_tok),
         "validation": validation,
     }
 
 
-def _compare_side(core, duration_ms, include_chunks, include_trace) -> dict:
+def _compare_side(core, duration_ms, include_chunks, include_trace, tokens=None) -> dict:
+    tokens = tokens or {"tokens": 0, "cost_usd": 0.0}
     return {
         "answer": core["answer"], "confidence": core["confidence"],
         "sources_used": core["sources_used"], "llm_calls": core["llm_calls"],
         "duration_ms": duration_ms,
+        "tokens": tokens["tokens"], "cost_usd": tokens["cost_usd"],
         "chunks": _public_chunks(core["chunks"]) if include_chunks else [],
         "trace": core["trace"] if include_trace else [],
     }
@@ -371,12 +386,19 @@ def run_pipeline_stream(
 
 def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms, started, request_id=None):
     trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.", safety_ms)]
+    usage = llm.new_usage()
 
     def done(core):
         elapsed_ms = _ms(started)
+        tokens = llm.summarize_usage(usage, settings.anthropic_model)
         _log_completed(question, "custom", elapsed_ms, core["trace"], core["llm_calls"],
-                       core["short_circuit"], request_id)
-        return ("done", _single_response(question, core, elapsed_ms, True, True, "custom"))
+                       core["short_circuit"], request_id,
+                       tokens=tokens["tokens"], cost_usd=tokens["cost_usd"])
+        response = _single_response(question, core, elapsed_ms, True, True, "custom")
+        response["tokens"] = tokens["tokens"]
+        response["cost_usd"] = tokens["cost_usd"]
+        response["cache_read_tokens"] = tokens["cache_read_tokens"]
+        return ("done", response)
 
     if store.chunk_count() == 0:
         trace.append(_step("RetrieverAgent", "skipped", "no_documents_indexed"))
@@ -387,7 +409,7 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
     _check_filter(filter_filenames, store)
 
     t = time.perf_counter()
-    plan = planner.planner_agent(question)
+    plan = planner.planner_agent(question, usage=usage)
     query = plan["rewritten_query"]
     trace.append(_step("PlannerAgent", "completed", {
         "intent": plan["intent"], "retrieval_strategy": plan["retrieval_strategy"],
@@ -433,7 +455,8 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
     raw = ""
     extractor = _AnswerExtractor(start="ANSWER:", stop="CONFIDENCE:")
     for delta in llm.stream_text(reasoner.REASONER_SYSTEM, user,
-                                 max_tokens=reasoner.REASONER_MAX_TOKENS, agent="ReasonerAgent"):
+                                 max_tokens=reasoner.REASONER_MAX_TOKENS,
+                                 agent="ReasonerAgent", usage=usage):
         raw += delta
         emit = extractor.feed(raw)
         if emit:
@@ -447,7 +470,7 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
     }, _ms(t)))
 
     t = time.perf_counter()
-    validation = validator.validator_agent(question, parsed["answer"], ranked)
+    validation = validator.validator_agent(question, parsed["answer"], ranked, usage=usage)
     trace.append(_step("ValidatorAgent", "completed", {
         "is_valid": validation["is_valid"], "hallucination_risk": validation["hallucination_risk"],
     }, _ms(t)))

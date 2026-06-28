@@ -521,6 +521,37 @@ def test_invalid_cache_mode_rejected(monkeypatch):
     config.get_settings.cache_clear()
 
 
+def test_summarize_usage_totals_and_cost():
+    sink = {"input_tokens": 1000, "output_tokens": 200,
+            "cache_read_input_tokens": 500, "cache_creation_input_tokens": 0}
+    s = llm.summarize_usage(sink, "claude-haiku-4-5")
+    assert s["tokens"] == 1700                       # 1000 + 200 + 500
+    assert s["cache_read_tokens"] == 500
+    # billable input = 1000 + 0*1.25 + 500*0.1 = 1050; (1050*$1 + 200*$5)/1e6 = $0.00205
+    assert abs(s["cost_usd"] - 0.00205) < 1e-9
+
+
+def test_complete_accumulates_into_usage_sink(monkeypatch):
+    class FakeUsage:
+        input_tokens, output_tokens = 100, 20
+        cache_read_input_tokens, cache_creation_input_tokens = 30, 0
+
+    monkeypatch.setattr(llm, "_raw_complete", lambda *a, **k: ("hi", FakeUsage()))
+    sink = llm.new_usage()
+    llm.complete("s", "u", usage=sink)
+    assert sink["input_tokens"] == 100
+    assert sink["output_tokens"] == 20
+    assert sink["cache_read_input_tokens"] == 30
+
+
+def test_pipeline_response_carries_tokens_and_cost(monkeypatch, indexed_store):
+    monkeypatch.setattr(llm, "complete", _route_complete)
+    _set_threshold(monkeypatch, "0.0")
+    out = pipeline.run_pipeline("When can ICU patients transfer?", agent_mode="custom",
+                                store=indexed_store)
+    assert "tokens" in out and "cost_usd" in out and "cache_read_tokens" in out
+
+
 def test_complete_logs_cache_usage(monkeypatch):
     class FakeUsage:
         input_tokens, output_tokens = 120, 30

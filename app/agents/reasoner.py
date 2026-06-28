@@ -26,13 +26,14 @@ REASON: <one short sentence on why>
 SOURCES: <comma-separated source filenames you used>"""
 
 
-def reasoner_agent(question: str, chunks: list[dict]) -> dict:
+def reasoner_agent(question: str, chunks: list[dict], usage: dict | None = None) -> dict:
     """Return a grounded answer dict: answer, confidence, confidence_reason, sources_used."""
     available = [c["filename"] for c in chunks]
     context = "\n\n".join(f"[{c['filename']}] {c['text']}" for c in chunks)
     user = f"CONTEXT:\n{context}\n\nQUESTION: {question}"
 
-    raw = llm.complete(REASONER_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS, agent="ReasonerAgent")
+    raw = llm.complete(REASONER_SYSTEM, user, max_tokens=REASONER_MAX_TOKENS,
+                       agent="ReasonerAgent", usage=usage)
     return _parse_response(raw, available)
 
 

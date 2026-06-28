@@ -61,6 +61,57 @@ def _log_usage(agent: Optional[str], usage, cache_mode: str) -> None:
     }})
 
 
+# ── per-query token usage + cost estimate ─────────────────────────────────────
+
+_USAGE_KEYS = ("input_tokens", "output_tokens",
+               "cache_read_input_tokens", "cache_creation_input_tokens")
+
+# USD per 1M tokens: (input, output). Cache reads bill ~0.1× input, writes ~1.25×.
+_PRICING = {
+    "claude-haiku-4-5": (1.0, 5.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-fable-5": (10.0, 50.0),
+}
+
+
+def new_usage() -> dict:
+    """A fresh per-query token accumulator. Threaded through the agent calls so the
+    count survives both the batch path and the streaming generator (a contextvar
+    would be lost across the stream's thread contexts)."""
+    return {k: 0 for k in _USAGE_KEYS}
+
+
+def _accumulate(sink: Optional[dict], usage) -> None:
+    if sink is None or usage is None:
+        return
+    for k in _USAGE_KEYS:
+        sink[k] += getattr(usage, k, 0) or 0
+
+
+def _price_for(model: str) -> tuple:
+    for prefix, price in _PRICING.items():
+        if model.startswith(prefix):
+            return price
+    return _PRICING["claude-haiku-4-5"]  # default to Haiku pricing
+
+
+def summarize_usage(sink: dict, model: str) -> dict:
+    """Total tokens consumed + an estimated USD cost (cache discounts applied)."""
+    in_price, out_price = _price_for(model)
+    fresh_in = sink.get("input_tokens", 0)
+    cache_read = sink.get("cache_read_input_tokens", 0)
+    cache_write = sink.get("cache_creation_input_tokens", 0)
+    out = sink.get("output_tokens", 0)
+    billable_in = fresh_in + cache_write * 1.25 + cache_read * 0.1
+    cost = (billable_in * in_price + out * out_price) / 1_000_000
+    return {
+        "tokens": fresh_in + cache_read + cache_write + out,
+        "cost_usd": round(cost, 6),
+        "cache_read_tokens": cache_read,
+    }
+
+
 def get_client() -> anthropic.Anthropic:
     """Lazily build the SDK client so importing this module needs no API key."""
     global _client
@@ -69,16 +120,19 @@ def get_client() -> anthropic.Anthropic:
     return _client
 
 
-def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None) -> str:
+def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
+             usage: Optional[dict] = None) -> str:
     """Send one system+user turn to Claude, with the blanket retry policy.
 
     `agent` labels the call so a failure reports which agent it failed at. The system
     prompt is cached per the configured strategy (block / prompt / off — D-12); it is
     identical across calls for a given agent, so block-level caching gives cache reads
-    after the first use. Cache + token usage is logged for observability.
+    after the first use. Cache + token usage is logged; if `usage` (a `new_usage()`
+    dict) is passed, this call's tokens are added to it for the per-query total.
     """
-    text, usage = call_with_retry(_raw_complete, system, user, max_tokens, agent=agent)
-    _log_usage(agent, usage, get_settings().cache_mode)
+    text, u = call_with_retry(_raw_complete, system, user, max_tokens, agent=agent)
+    _log_usage(agent, u, get_settings().cache_mode)
+    _accumulate(usage, u)
     return text
 
 
@@ -97,7 +151,8 @@ def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[flo
     return response.content[0].text, response.usage
 
 
-def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None):
+def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
+                usage: Optional[dict] = None):
     """Yield answer text deltas as the model generates them.
 
     Unlike `complete()`, there is no retry wrapper — a stream can't be transparently
@@ -115,7 +170,9 @@ def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[s
     ) as stream:
         yield from stream.text_stream
         try:
-            _log_usage(agent, stream.get_final_message().usage, settings.cache_mode)
+            final = stream.get_final_message().usage
+            _log_usage(agent, final, settings.cache_mode)
+            _accumulate(usage, final)
         except Exception:  # usage logging must never break the response
             pass
 

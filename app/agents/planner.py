@@ -20,10 +20,11 @@ Return ONLY a JSON object, no other text:
 }"""
 
 
-def planner_agent(question: str) -> dict:
+def planner_agent(question: str, usage: dict | None = None) -> dict:
     """Return a retrieval plan: intent, retrieval_strategy, top_k, rewritten_query."""
     top_k = get_settings().top_k_retrieval
-    raw = llm.complete(PLANNER_SYSTEM, f"QUESTION: {question}", max_tokens=300, agent="PlannerAgent")
+    raw = llm.complete(PLANNER_SYSTEM, f"QUESTION: {question}", max_tokens=300,
+                       agent="PlannerAgent", usage=usage)
     return _safe_plan(raw, question, top_k)
 
 
