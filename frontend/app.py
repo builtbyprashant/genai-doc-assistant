@@ -342,7 +342,10 @@ elif result and result.get("mode") == "compare":
             with st.container(border=True):
                 st.markdown(f"**{title}**")
                 st.caption(f"Confidence {_confidence_badge(side['confidence'])} · {side['llm_calls']} LLM calls · {_fmt_ms(side['duration_ms'])} · {_fmt_usage(side)}")
-                st.markdown(_tame_markdown(side["answer"]) or "_(no answer)_")
+                if side.get("short_circuit") and side.get("note"):
+                    st.info(f"ℹ️ {side['note']}")
+                else:
+                    st.markdown(_tame_markdown(side["answer"]) or "_(no answer)_")
                 if side["sources_used"]:
                     st.caption(f"Sources: {', '.join(side['sources_used'])}")
     v = result["validation"]

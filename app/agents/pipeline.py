@@ -215,11 +215,16 @@ def _run_compare(question, filter_filenames, include_chunks, include_trace, stor
 
 def _compare_side(core, duration_ms, include_chunks, include_trace, tokens=None) -> dict:
     tokens = tokens or {"tokens": 0, "cost_usd": 0.0}
+    issues = core.get("validation", {}).get("issues", [])
     return {
         "answer": core["answer"], "confidence": core["confidence"],
         "sources_used": core["sources_used"], "llm_calls": core["llm_calls"],
         "duration_ms": duration_ms,
         "tokens": tokens["tokens"], "cost_usd": tokens["cost_usd"],
+        # Carry the short-circuit reason so compare mode can explain "no answer"
+        # the same way single-mode does (instead of a bald "(no answer)").
+        "short_circuit": core["short_circuit"],
+        "note": issues[0] if core["short_circuit"] and issues else "",
         "chunks": _public_chunks(core["chunks"]) if include_chunks else [],
         "trace": core["trace"] if include_trace else [],
     }
