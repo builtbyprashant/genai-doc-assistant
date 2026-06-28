@@ -78,7 +78,7 @@ def load_settings() -> Settings:
         agent_mode=os.environ.get("AGENT_MODE", "custom"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
         reranker_model=os.environ.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
-        similarity_threshold=float(os.environ.get("SIMILARITY_THRESHOLD", "0.4")),
+        similarity_threshold=float(os.environ.get("SIMILARITY_THRESHOLD", "0.3")),
         top_k_retrieval=int(os.environ.get("TOP_K_RETRIEVAL", "10")),
         top_k_rerank=int(os.environ.get("TOP_K_RERANK", "5")),
         chunk_size=int(os.environ.get("CHUNK_SIZE", "200")),

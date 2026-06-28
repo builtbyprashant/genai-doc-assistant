@@ -142,7 +142,7 @@ Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml
 1. **SafetyGuard** — checks for prompt injection patterns (rule-based, no LLM call)
 2. **PlannerAgent** — analyses query intent, rewrites for semantic density (LLM call 1)
 3. **RetrieverAgent** — cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
-4. **SimilarityThreshold** — rejects if best match scores below 0.4, short-circuits pipeline
+4. **SimilarityThreshold** — rejects if best match scores below 0.3 (cosine), short-circuits pipeline
 5. **RankerAgent** — cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
 6. **ReasonerAgent** — generates grounded answer using only retrieved context (LLM call 2); in `custom` mode this answer is **streamed** to the UI token-by-token via `POST /query/stream`
 7. **ValidatorAgent** — independent hallucination risk check with fresh context (LLM call 3)
@@ -189,7 +189,7 @@ ANTHROPIC_MODEL=claude-haiku-4-5
 ANTHROPIC_CACHE_MODE=block    # prompt caching: block (default) | prompt | off — see "Prompt caching"
 EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim — see "Swappable models"
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 # any cross-encoder
-SIMILARITY_THRESHOLD=0.4      # below this = no answer returned
+SIMILARITY_THRESHOLD=0.3      # below this (cosine) = no answer returned
 TOP_K_RETRIEVAL=10            # chunks fetched from ChromaDB
 TOP_K_RERANK=5                # chunks passed to Reasoner after ranking
 CHUNK_SIZE=200                # words per chunk
