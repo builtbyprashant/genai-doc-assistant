@@ -20,8 +20,10 @@ genai-doc-assistant/
 # Uploaded documents / local data
 data/
 
-# Design docs — published manually later (DECISIONS.md, P-1)
-docs/
+# Private design docs: only docs/NotForGH/ stays out of the public repo.
+# Top-level docs (PROJECT_SCOPE, API_CONTRACT, REQUIREMENTS, UI_SPECIFICATION,
+# IMPLEMENTATION_PLAN) are published. (P-1)
+docs/NotForGH/
 
 # OS / editor noise
 .DS_Store

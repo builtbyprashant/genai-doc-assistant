@@ -10,10 +10,10 @@
 
 An AI-powered document intelligence system that allows users to upload enterprise or personal documents in multiple formats and ask natural language questions. The system retrieves relevant content using semantic search and generates grounded and cited answers with full cycle observability.
 
-**The problem it solves:** Knowledge locked in documents — PDFs, spreadsheets, reports, markdown files etc is hard to query. This system makes any document collection conversational. Upload your documents, ask questions in plain English, get answers with source citations.
+**The problem it solves:** Knowledge locked in documents, PDFs, spreadsheets, reports, markdown files etc is hard to query. This system makes any document collection conversational. Upload your documents, ask questions in plain English, get answers with source citations.
 
 **What makes it agentic:** Rather than a single LLM call, in **custom** mode this system uses three specialised LLM agents (Planner, Reasoner, Validator) that collaborate in sequence, each with a focused role. Four non-LLM pipeline steps handle safety, retrieval, threshold checking, and cross-encoder re-ranking without wasting API calls.
-While in **llama_index** mode (inspired by LlamaIndex) its uses a react loop agent.
+While in **llama_index** mode (inspired by LlamaIndex) it uses a ReAct loop agent, built from scratch using python.
 
 ---
 
@@ -22,18 +22,22 @@ While in **llama_index** mode (inspired by LlamaIndex) its uses a react loop age
 Most RAG systems give you one pipeline and one answer. This system gives you **two architecturally distinct pipelines** and lets you **compare them side by side**.
 
 - **`custom` mode** is a fixed 7-step sequential pipeline: deterministic, fully traced, optimised for predictability. Every step is visible, including which chunks were retrieved, how they were reranked, and what confidence the Validator assigned.
-- **`llama_index` mode** implements the ReAct reasoning pattern internally, the same Think → Search → Observe loop that powers LlamaIndex's ReActAgent. Instead of a fixed retrieval pass, it decides dynamically when to search again and when it has enough to answer.
+- **`llama_index` mode** implements the ReAct reasoning pattern internally as llama_agent, the same Think → Search → Observe loop that LlamaIndex's ReActAgent uses. Instead of a fixed retrieval pass, llama_agent decides dynamically when to search again and when it has enough to answer.
 - **`compare` mode** runs both pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. This turns the system into a **live experimentation and fine-tuning workbench**, where you can see exactly where the two approaches diverge, which chunks each pipeline found, and where one outperforms the other.
 
 Built for engineers who want to understand what is happening inside their RAG pipeline, not just get an answer out of it.
 
 ---
 
-**Built from scratch.** We implemented three pipeline modes using python and ChromaDB. For LLM interaction Anthropic SDK is used, which makes it hardbound with Anthropic LLMs of choice as of now. The `custom` mode is a fixed sequential pipeline optimised for predictability and makes **1-3 LLM calls** per request. The `llama_index` mode implements the ReAct reasoning pattern without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation.
+**Built from scratch.** We implemented three pipeline modes using python and ChromaDB. For LLM interaction Anthropic API is used, which makes it hardbound with Anthropic LLMs of choice as of now. The `custom` mode is a deterministic sequential pipeline optimised for predictability and makes **3 LLM calls** per request (Planner, Reasoner, Validator; fewer when the pipeline short-circuits on a safety block or low similarity). The `llama_index` mode implements the ReAct reasoning pattern without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation.
 
 ---
 
 ## Architecture
+
+Two architecturally distinct pipelines run behind the same FastAPI backend and share one retrieval stack (ChromaDB vectors plus the cross-encoder reranker). `compare` mode runs both on a single query.
+
+### `custom` mode: fixed 7-step pipeline
 
 ```text
 Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend
@@ -49,13 +53,35 @@ Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend
                    cosine; persisted)         (Planner / Reasoner / Validator)
 ```
 
-In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-token (`POST /query/stream`).
+In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-token (`POST /query/stream`). The path is deterministic: the same query runs the same steps every time.
 
-**7-step query pipeline — three modes via AGENT_MODE flag:**
+### `llama_index` mode: ReAct loop
+
+```text
+Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend ──▶ ReAct loop (1–4 turns)
+                                                              │
+        ┌───────────────────────────────────────────────────┘
+        ▼
+   Think ──▶ SEARCH <query> ──▶ Observe (fetch + append context) ──┐
+        ▲                                                          │
+        └──────────────────────── loop ◀──────────────────────────┘
+        │  (enough context?)
+        ▼
+   FINAL ──▶ grounded answer + confidence
+        │
+        ├──▶ ChromaDB (vectors, cosine)
+        └──▶ Anthropic API  (one llama_agent; context grows with each turn and is cached)
+```
+
+The loop runs on a single system prompt with a cached context block that grows as it searches, so each turn (including the final synthesis) reads the previous turn's context from cache. A **diminishing-returns guard** stops searching once a SEARCH stops surfacing new chunks, holding the loop to 1–4 LLM calls instead of burning the whole search budget.
+
+### Modes and pipeline steps
+
+**Three modes via the `AGENT_MODE` flag:**
 
 | Mode | Description | LLM calls | Best for |
 |---|---|---|---|
-| `custom` (default) | Sequential 7-step pipeline | 3 fixed | Speed, predictability, full trace |
+| `custom` (default) | Deterministic 7-step pipeline | 3 | Speed, predictability, full trace |
 | `llama_index` | ReAct search→answer loop | 1–4 variable | Complex multi-step reasoning |
 | `compare` | Runs both, side-by-side results | 4–7 combined | Pipeline evaluation and tuning |
 
@@ -69,15 +95,15 @@ In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-t
 | ReasonerAgent | LLM Agent | claude-haiku-4-5 | Grounded answer generation (streamed in `custom` mode) |
 | ValidatorAgent | LLM Agent | claude-haiku-4-5 | Hallucination check |
 
-> **Model & speed.** The three LLM agents default to **`claude-haiku-4-5`** — we switched from
+> **Model & speed.** The three LLM agents default to **`claude-haiku-4-5`**, we switched from
 > `claude-sonnet-4-6` to **improve response time** (Haiku generates ~3× faster). The model stays
 > **configurable** via the `ANTHROPIC_MODEL` env var; set it back to `claude-sonnet-4-6` for maximum
 > answer quality. In `custom` mode the answer is also **streamed** to the UI token-by-token, so the
 > first words appear in ~2–4 s instead of after the whole answer is written.
 
 > **Observability.** Every answer shows its **confidence**, **latency**, **tokens consumed**, and an
-> **estimated cost** (per side in `compare` mode), so the speed/quality/cost tradeoff between modes —
-> and the savings from prompt caching — are visible at a glance.
+> **estimated cost** (per side in `compare` mode), so the speed/quality/cost tradeoff between modes,
+> and the savings from prompt caching, are visible at a glance.
 
 
 ---
@@ -97,8 +123,8 @@ cd genai-doc-assistant
 #    PowerShell:  Copy-Item .env.example .env
 #    bash:        cp .env.example .env
 
-# 3. Provide your API key via your shell environment — it is NOT stored in .env.
-#    PowerShell:  setx ANTHROPIC_API_KEY "sk-ant-..."   (new shells) — or for this shell:
+# 3. Provide your API key via your shell environment: it is NOT stored in .env.
+#    PowerShell:  setx ANTHROPIC_API_KEY "sk-ant-..."   (new shells): or for this shell:
 #                 $env:ANTHROPIC_API_KEY = "sk-ant-..."
 #    bash:        export ANTHROPIC_API_KEY=sk-ant-...
 
@@ -112,7 +138,7 @@ docker compose up --build
 
 > **`.env` vs the system env:** the Anthropic API key lives **only in your shell/OS
 > environment** (Docker Compose reads it from there), never in `.env`. Everything else
-> lives in `.env` — edit a value and re-run `docker compose up` to see it take effect.
+> lives in `.env`, edit a value and re-run `docker compose up` to see it take effect.
 > A fresh clone with no `.env` still runs on the built-in defaults.
 
 **First use:**
@@ -153,25 +179,25 @@ Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml
 ### Document Ingestion
 1. File uploaded via Streamlit UI or API
 2. Raw bytes validated (MIME type, size, format) before any parsing
-3. Duplicate detection via SHA-256 content hash — same content under a different filename is rejected
+3. Duplicate detection via SHA-256 content hash, same content under a different filename is rejected
 4. Text extracted and split into 200-word overlapping chunks (25-word overlap)
 5. Each chunk embedded using `all-MiniLM-L6-v2` (384-dimensional vectors, cosine space)
 6. Vectors and metadata stored in ChromaDB (persisted to disk via Docker volume)
 
 ### Question Answering
-1. **SafetyGuard** — checks for prompt injection patterns (rule-based, no LLM call)
-2. **PlannerAgent** — analyses query intent, rewrites for semantic density (LLM call 1)
-3. **RetrieverAgent** — cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
-4. **SimilarityThreshold** — rejects if best match scores below 0.3 (cosine), short-circuits pipeline
-5. **RankerAgent** — cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
-6. **ReasonerAgent** — generates grounded answer using only retrieved context (LLM call 2); in `custom` mode this answer is **streamed** to the UI token-by-token via `POST /query/stream`
-7. **ValidatorAgent** — independent hallucination risk check with fresh context (LLM call 3)
+1. **SafetyGuard**, checks for prompt injection patterns (rule-based, no LLM call)
+2. **PlannerAgent**, analyses query intent, rewrites for semantic density (LLM call 1)
+3. **RetrieverAgent**, cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
+4. **SimilarityThreshold**, rejects if best match scores below 0.3 (cosine), short-circuits pipeline
+5. **RankerAgent**, cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
+6. **ReasonerAgent**, generates grounded answer using only retrieved context (LLM call 2); in `custom` mode this answer is **streamed** to the UI token-by-token via `POST /query/stream`
+7. **ValidatorAgent**, independent hallucination risk check with fresh context (LLM call 3)
 
 ---
 
 ## Design Documentation
 
-This project was designed before any code was written. Full documentation is available in `/docs`:
+This project was designed before any code was written. The core design documentation is in `/docs`:
 
 | Document | Contents |
 |---|---|
@@ -179,11 +205,10 @@ This project was designed before any code was written. Full documentation is ava
 | Requirements and Assumptions | 40+ edge cases with acceptable behaviours, design decisions |
 | API Contract | All endpoints, request/response shapes, error types |
 | UI Specification | Every screen state, component behaviour, session state |
-| Future Version Scope | AWS deployment, Grafana observability, production optimisations |
-| Decision Log | Single source of truth — every design decision, rationale, and status |
-| Implementation Plan | Build order, per-task file scope, test mapping — all mapped to decisions |
+| Implementation Plan | Build order, per-task file scope, test mapping, all mapped to decisions |
+| Decision Log | `DecisionLogs.md`: key design decisions, conflicts resolved, and rationale |
 
-> Note: The `/docs` folder will be published after cleanup. Design-first development was a core principle of this project — all architecture, API contracts, and edge cases were documented and reviewed before any code was written.
+> Design-first development was a core principle of this project: the architecture, API contracts, requirements, and edge cases were all documented and reviewed before any code was written. The decision log (`DecisionLogs.md`) captures the key decisions and their rationale; the project's full internal log, including forward-looking design, is kept private.
 
 ---
 
@@ -191,10 +216,10 @@ This project was designed before any code was written. Full documentation is ava
 
 `.env` (copied from the committed `.env.example`) holds all the **non-secret** config.
 Edit a value and re-run `docker compose up` to apply it. The `ANTHROPIC_API_KEY` is **not**
-in this file — it is read from your shell/OS environment (see Quick Start).
+in this file, it is read from your shell/OS environment (see Quick Start).
 
 ```bash
-# ANTHROPIC_API_KEY — set in your shell/OS env, NOT in .env:
+# ANTHROPIC_API_KEY: set in your shell/OS env, NOT in .env:
 #   setx ANTHROPIC_API_KEY "sk-ant-..."   (key from https://console.anthropic.com)
 
 # Agent mode (default: custom)
@@ -206,8 +231,8 @@ AGENT_MODE=custom
 # Key defaults (all configurable)
 # Default is Haiku for faster responses; set to claude-sonnet-4-6 for max answer quality.
 ANTHROPIC_MODEL=claude-haiku-4-5
-ANTHROPIC_CACHE_MODE=block    # prompt caching: block (default) | prompt | off — see "Prompt caching"
-EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim — see "Swappable models"
+ANTHROPIC_CACHE_MODE=block    # prompt caching: block (default) | prompt | off, see "Prompt caching"
+EMBEDDING_MODEL=all-MiniLM-L6-v2                     # 384-dim, see "Swappable models"
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2 # any cross-encoder
 SIMILARITY_THRESHOLD=0.3      # below this (cosine) = no answer returned
 TOP_K_RETRIEVAL=10            # chunks fetched from ChromaDB
@@ -227,13 +252,13 @@ the **Reasoner and Validator process the same context**, so the Reasoner writes 
 Validator reads it instead of re-processing it. The context is placed in its own `cache_control`
 block at the head of the user message, with the agent-specific task trailing it uncached; both
 agents share a grounding system so the cached prefix matches. In `llama_index` mode the whole
-ReAct loop runs on one system and the cached `question + context` block **grows append-only**, so
+ReAct loop runs on one system and the cached `question + context` block **grows with each turn**, so
 each turn (including the final synthesis) reads the previous turn's context from cache.
 
-> **Why not cache the system prompts?** They're ~100 tokens each — below the model's minimum
+> **Why not cache the system prompts?** They're ~100 tokens each, below the model's minimum
 > cacheable length (~2048 for Haiku, ~1024 for Sonnet/Opus), so `cache_control` on them is silently
 > ignored. Caching only pays off on the large CONTEXT, and only when it clears that floor (bigger
-> documents / more chunks, or a Sonnet/Opus model). Verify with the logs below — `off` disables it.
+> documents / more chunks, or a Sonnet/Opus model). Verify with the logs below, `off` disables it.
 
 Cache effectiveness is **observable in the logs**: every LLM call emits an `llm_usage` event with `cache_read_input_tokens` (served from cache) and `cache_creation_input_tokens` (written to cache):
 
@@ -245,9 +270,9 @@ docker compose logs backend | grep llm_usage
 
 ### Swappable models
 
-Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`) — no code change needed. They are independent of each other, but the embedding model is constrained by the vector index.
+Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`), no code change needed. They are independent of each other, but the embedding model is constrained by the vector index.
 
-**Embedding model (bi-encoder)** — produces the vectors stored in ChromaDB.
+**Embedding model (bi-encoder)**, produces the vectors stored in ChromaDB.
 > ⚠️ Must output **384-dimensional** vectors to match the existing index, and changing it means **deleting the index and re-uploading** all documents (old and new vectors must come from the same model). Mind the token limit relative to `CHUNK_SIZE` too.
 
 | Model | Dim | Notes |
@@ -257,8 +282,8 @@ Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`) 
 | `intfloat/e5-small-v2` | 384 | Good multilingual-ish |
 | `thenlper/gte-small` | 384 | Competitive small model |
 
-**Reranker (cross-encoder)** — scores `(query, chunk)` pairs after retrieval.
-> No dimension constraint — it outputs a relevance score, not a vector. **Drop-in swappable**, no re-indexing.
+**Reranker (cross-encoder)**, scores `(query, chunk)` pairs after retrieval.
+> No dimension constraint, it outputs a relevance score, not a vector. **Drop-in swappable**, no re-indexing.
 
 | Model | Notes |
 |---|---|
@@ -266,7 +291,7 @@ Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`) 
 | `cross-encoder/ms-marco-MiniLM-L-12-v2` | Larger, more accurate, slower |
 | `BAAI/bge-reranker-base` | Strong alternative |
 
-The embedding model is *plugged into* ChromaDB as its embedding function — it is not ChromaDB-specific. A different vector backend (a future version) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
+The embedding model is *plugged into* ChromaDB as its embedding function, it is not ChromaDB-specific. A different vector backend (a future version) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
 
 ---
 
@@ -280,7 +305,7 @@ The FastAPI backend exposes a REST API with auto-generated documentation at `htt
 | POST | `/documents/upload` | Upload one or more documents (207 multi-status) |
 | GET | `/documents` | List indexed documents |
 | DELETE | `/documents/{filename}` | Remove a document |
-| POST | `/query` | Ask a question (batch — full JSON response) |
+| POST | `/query` | Ask a question (batch, full JSON response) |
 | POST | `/query/stream` | Ask a question, **streamed** (`custom` mode streams the answer token-by-token, then a JSON metadata frame) |
 
 **Example query:**
@@ -334,15 +359,47 @@ Tests cover all services, all API endpoints, edge cases from requirements, and p
 
 ---
 
+## Industry-Standard Best Practices
+
+The project follows production-grade engineering practices end to end.
+
+### Continuous integration and delivery (CI/CD)
+- **GitHub Actions** runs on every push and every pull request (status is shown by the build badge at the top of this README).
+- **Lint and test on every change.** Linting (`ruff`) and the full test suite run on all pushes and PRs, for fast feedback.
+- **Coverage on every run.** Tests run under coverage (`pytest --cov=app`), and a coverage report is posted to the workflow run summary so coverage is visible per run.
+- **Images built only when they can break.** The Docker image build is path-gated: it runs only on a push to `main` that changed an image-affecting file (a requirements file or a Dockerfile), so everyday commits run lint and test only. Build-layer caching keeps warm builds short.
+- **Cache keep-warm.** A scheduled job refreshes the dependency and model-download caches so a low-activity repository does not go cold.
+
+### Test-driven development
+- **Tests are the spec.** Each service's tests were written before or alongside its implementation and ship in the same commit as the code.
+- **105 tests across five suites:** vector store, chunking, document loading, the agent pipeline, and the API.
+- **Coverage targets the real risks:** cosine similarity and threshold behaviour, chunk sizing and routing, all eight document formats (including scanned and password-protected PDF rejection and duplicate detection), every API endpoint (including multi-status upload and the compare envelope), and pipeline short-circuits.
+
+### Code quality and coverage
+- **Linting.** `ruff` enforces a consistent style (Python 3.11 target, 110-character lines).
+- **Coverage measurement.** `pytest-cov` measures coverage of the `app/` package on every CI run, reported with missing-line detail and an XML artifact.
+- **Small, reviewable changes.** One commit per task in Conventional Commits format, so history maps cleanly to the design.
+
+### Security practices
+- **No secrets in the repository.** The Anthropic API key is read only from the host/OS environment; it is never written to `.env` and never committed. `.env` is gitignored, and only `.env.example` (non-secret defaults) is tracked.
+- **No secrets in git history.** A final verification step checks the full git history for any `.env` or key material before release.
+- **Configuration, not hardcoding.** All configuration comes from environment variables; there are no hardcoded secrets, URLs, or paths.
+- **Prompt-injection guard.** A rule-based SafetyGuard screens input before any model call.
+- **PII-safe logging.** Raw user queries are never logged; each log line carries only a short SHA-256 hash for correlation.
+- **Grounded answers.** Generation is constrained to the retrieved context, with an independent Validator hallucination check, which reduces fabrication.
+- **Validated input and structured errors.** Uploaded files are validated on their raw bytes before any parser runs, and errors are returned as structured RFC-7807 problem details.
+
+---
+
 ## Limitations
 
-- Single-turn Q&A only (no conversation history) — planned for a future version
+- Single-turn Q&A only (no conversation history), planned for a future version
 - Maximum 20 documents per index (configurable via `MAX_DOCUMENTS`)
-- PDF must have a text layer — scanned/image PDFs not supported
-- Original uploaded files are not persisted — only chunks stored in ChromaDB
-- Embedding model optimised for English — other languages produce lower quality
-- No authentication or access control — planned for a future version
-- Single user assumed — concurrent writes not guaranteed safe at scale
+- PDF must have a text layer, scanned/image PDFs not supported
+- Original uploaded files are not persisted, only chunks stored in ChromaDB
+- Embedding model optimised for English, other languages produce lower quality
+- No authentication or access control, planned for a future version
+- Single user assumed, concurrent writes not guaranteed safe at scale
 - Query response time ~2–4 seconds typical in `custom` mode with the Haiku default; the answer streams so the first words appear in ~2–4 s. Switching `ANTHROPIC_MODEL` to `claude-sonnet-4-6` raises quality but roughly triples generation time
 
 See Requirements and Assumptions in `/docs` for the full list with design rationale.
@@ -361,8 +418,6 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 - Authentication (API key middleware)
 - Maximum 2 LLM calls per query (deterministic grounding check replaces ValidatorAgent) in both the modes
 
-See the Future Version Scope in `/docs` for the full roadmap with implementation details.
-
 ---
 
 ## Tech Stack
@@ -374,8 +429,8 @@ See the Future Version Scope in `/docs` for the full roadmap with implementation
 | Vector database | ChromaDB (embedded, cosine space, persisted) |
 | Embedding model | all-MiniLM-L6-v2 (sentence-transformers, 384 dimensions) |
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
-| LLM | Claude `claude-haiku-4-5` via Anthropic API (default — for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
-| Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
+| LLM | Claude `claude-haiku-4-5` via Anthropic API (default, for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
+| Document parsing | Per-format libraries, pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
 | llama_index mode | Lightweight ReAct loop built using python |
 | Testing | pytest + httpx |
 | Deployment | Docker Compose (primary) + Python venv (local dev) |
@@ -412,25 +467,24 @@ genai-doc-assistant/
 
 ---
 
-## Acknowledgement
+## Acknowledgements
 
-Anthropic
-Claude
-LlamaIndex
-Hugging Face
-Git Hub
-Docker
-Chroma DB
+This project stands on excellent open tools and services:
 
----
+- **[Anthropic Claude](https://www.anthropic.com/claude)**: the LLM behind the Planner, Reasoner, Validator agents in custom mode, and llama_agent in llama_index mode. Interaction with Anthropic LLMs was built using Anthropic API.
+- **[LlamaIndex](https://www.llamaindex.ai/)**: inspiration for the `llama_index` mode's ReAct loop. The library itself is not a dependency; the pattern is reimplemented from scratch using python.
+- **[Hugging Face](https://huggingface.co/) sentence-transformers**: the `all-MiniLM-L6-v2` embeddings and the `ms-marco-MiniLM-L-6-v2` cross-encoder reranker, run locally on CPU.
+- **[ChromaDB](https://www.trychroma.com/)**: the persistent vector store (cosine similarity).
+- **[FastAPI](https://fastapi.tiangolo.com/) and [Streamlit](https://streamlit.io/)**: the backend API and the UI.
+- **[Docker](https://www.docker.com/) and [GitHub Actions](https://github.com/features/actions)**: containerized deployment and CI (lint, tests, image build).
 
 ---
 
 ## Author
 
-Built by [@builtbyprashant](https://github.com/builtbyprashant) as a learning project exploring production-grade Generative AI engineering — RAG pipelines, agentic systems, vector databases, CI/CD, and Docker deployment.
+It's [@builtbyprashant](https://github.com/builtbyprashant) as a learning project exploring production-grade Generative AI engineering, RAG pipelines, agentic systems, vector databases, CI/CD, and Docker deployment.
 
-Design-first approach: the system architecture, API contracts, requirements, edge cases, CI pipeline, and deployment strategy were fully designed before any code was written. Implementation was carried out by the author together with Claude Code, under continuous design review.
+Design-first methodology was adopted, wherein system architecture, API contracts, requirements, edge cases, CI pipeline, and deployment strategy were fully specified prior to implementation. Code was developed collaboratively with Claude Code under continuous and rigorous author oversight, encompassing design decisions, technical details, output validation, and test review.
 
 ---
 
