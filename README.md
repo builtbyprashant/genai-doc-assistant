@@ -8,11 +8,12 @@
 
 ## What It Is
 
-An AI-powered document intelligence system that allows users to upload enterprise documents in multiple formats and ask natural language questions. The system retrieves relevant content using semantic search and generates grounded, cited answers using a 7-step agent pipeline built on Claude.
+An AI-powered document intelligence system that allows users to upload enterprise or personal documents in multiple formats and ask natural language questions. The system retrieves relevant content using semantic search and generates grounded and cited answers with full cycle observability.
 
-**The problem it solves:** Knowledge locked in documents — PDFs, spreadsheets, reports, markdown files — is hard to query. This system makes any document collection conversational. Upload your documents, ask questions in plain English, get answers with source citations.
+**The problem it solves:** Knowledge locked in documents — PDFs, spreadsheets, reports, markdown files etc is hard to query. This system makes any document collection conversational. Upload your documents, ask questions in plain English, get answers with source citations.
 
-**What makes it agentic:** Rather than a single LLM call, the system uses three specialised LLM agents (Planner, Reasoner, Validator) that collaborate in sequence, each with a focused role. Four non-LLM pipeline steps handle safety, retrieval, threshold checking, and cross-encoder re-ranking without wasting API calls.
+**What makes it agentic:** Rather than a single LLM call, in **custom** mode this system uses three specialised LLM agents (Planner, Reasoner, Validator) that collaborate in sequence, each with a focused role. Four non-LLM pipeline steps handle safety, retrieval, threshold checking, and cross-encoder re-ranking without wasting API calls.
+While in **llama_index** mode (inspired by LlamaIndex) its uses a react loop agent.
 
 ---
 
@@ -21,10 +22,14 @@ An AI-powered document intelligence system that allows users to upload enterpris
 Most RAG systems give you one pipeline and one answer. This system gives you **two architecturally distinct pipelines** and lets you **compare them side by side**.
 
 - **`custom` mode** is a fixed 7-step sequential pipeline: deterministic, fully traced, optimised for predictability. Every step is visible, including which chunks were retrieved, how they were reranked, and what confidence the Validator assigned.
-- **`llama_index` mode** implements the ReAct reasoning pattern internally, the same Think → Search → Observe loop that powers LlamaIndex's ReActAgent, built from scratch on the Anthropic SDK. Instead of a fixed retrieval pass, it decides dynamically when to search again and when it has enough to answer.
-- **`compare` mode** runs both pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. This turns the system into a live experimentation and fine-tuning workbench, where you can see exactly where the two approaches diverge, which chunks each pipeline found, and where one outperforms the other.
+- **`llama_index` mode** implements the ReAct reasoning pattern internally, the same Think → Search → Observe loop that powers LlamaIndex's ReActAgent. Instead of a fixed retrieval pass, it decides dynamically when to search again and when it has enough to answer.
+- **`compare` mode** runs both pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. This turns the system into a **live experimentation and fine-tuning workbench**, where you can see exactly where the two approaches diverge, which chunks each pipeline found, and where one outperforms the other.
 
 Built for engineers who want to understand what is happening inside their RAG pipeline, not just get an answer out of it.
+
+---
+
+**Built from scratch.** We implemented three pipeline modes using python and ChromaDB. For LLM interaction Anthropic SDK is used, which makes it hardbound with Anthropic LLMs of choice as of now. The `custom` mode is a fixed sequential pipeline optimised for predictability and makes **1-3 LLM calls** per request. The `llama_index` mode implements the ReAct reasoning pattern without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation.
 
 ---
 
@@ -51,7 +56,7 @@ In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-t
 | Mode | Description | LLM calls | Best for |
 |---|---|---|---|
 | `custom` (default) | Sequential 7-step pipeline | 3 fixed | Speed, predictability, full trace |
-| `llama_index` | ReAct search→answer loop (Anthropic SDK) | 1–4 variable | Complex multi-step reasoning |
+| `llama_index` | ReAct search→answer loop | 1–4 variable | Complex multi-step reasoning |
 | `compare` | Runs both, side-by-side results | 4–7 combined | Pipeline evaluation and tuning |
 
 | Step | Type | Model | Purpose |
@@ -74,7 +79,6 @@ In `custom` mode the Reasoner's answer is **streamed** back to the UI token-by-t
 > **estimated cost** (per side in `compare` mode), so the speed/quality/cost tradeoff between modes —
 > and the savings from prompt caching — are visible at a glance.
 
-**Built from scratch.** We implemented three pipeline modes using only the Anthropic SDK and ChromaDB. The `custom` mode is a fixed sequential pipeline optimised for predictability. The `llama_index` mode implements the ReAct reasoning pattern — the same pattern LlamaIndex's ReActAgent uses internally — without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation. A future version replaces our custom ReAct loop with the real LlamaIndex binding.
 
 ---
 
@@ -195,7 +199,7 @@ in this file — it is read from your shell/OS environment (see Quick Start).
 
 # Agent mode (default: custom)
 # custom      → 7-step pipeline, 3 LLM calls, predictable
-# llama_index → ReAct search→answer loop on the Anthropic SDK (no LlamaIndex dep), variable LLM calls
+# llama_index → ReAct search→answer loop, variable LLM calls
 # compare     → both modes, side-by-side results for evaluation
 AGENT_MODE=custom
 
@@ -353,9 +357,9 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 - PII redaction in logs (AWS Comprehend / Presidio)
 - Multi-turn conversation (DynamoDB session history)
 - Vector store abstraction (swap ChromaDB → Pinecone via env var)
-- Row-aware chunking for CSV/Excel
+- Row-aware chunking for CSV/Excel and support for advanced pdfs
 - Authentication (API key middleware)
-- Maximum 2 LLM calls per query (deterministic grounding check replaces ValidatorAgent)
+- Maximum 2 LLM calls per query (deterministic grounding check replaces ValidatorAgent) in both the modes
 
 See the Future Version Scope in `/docs` for the full roadmap with implementation details.
 
@@ -372,7 +376,7 @@ See the Future Version Scope in `/docs` for the full roadmap with implementation
 | Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
 | LLM | Claude `claude-haiku-4-5` via Anthropic API (default — for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
 | Document parsing | Per-format libraries — pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
-| llama_index mode | Lightweight ReAct loop on the Anthropic SDK (full LlamaIndex deferred to a future version) |
+| llama_index mode | Lightweight ReAct loop built using python |
 | Testing | pytest + httpx |
 | Deployment | Docker Compose (primary) + Python venv (local dev) |
 
@@ -405,6 +409,20 @@ genai-doc-assistant/
 ├── setup_venv.sh
 └── README.md
 ```
+
+---
+
+## Acknowledgement
+
+Anthropic
+Claude
+LlamaIndex
+Hugging Face
+Git Hub
+Docker
+Chroma DB
+
+---
 
 ---
 
