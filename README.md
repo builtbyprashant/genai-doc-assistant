@@ -185,13 +185,25 @@ Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml
 6. Vectors and metadata stored in ChromaDB (persisted to disk via Docker volume)
 
 ### Question Answering
+
+Answer generation runs in one of **two modes** (chosen per request via the `AGENT_MODE` flag), plus a `compare` mode that runs both side by side.
+
+#### `custom` mode: deterministic 7-step pipeline (3 LLM calls)
 1. **SafetyGuard**, checks for prompt injection patterns (rule-based, no LLM call)
 2. **PlannerAgent**, analyses query intent, rewrites for semantic density (LLM call 1)
 3. **RetrieverAgent**, cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
 4. **SimilarityThreshold**, rejects if best match scores below 0.3 (cosine), short-circuits pipeline
 5. **RankerAgent**, cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
-6. **ReasonerAgent**, generates grounded answer using only retrieved context (LLM call 2); in `custom` mode this answer is **streamed** to the UI token-by-token via `POST /query/stream`
+6. **ReasonerAgent**, generates grounded answer using only retrieved context (LLM call 2); the answer is **streamed** to the UI token-by-token via `POST /query/stream`
 7. **ValidatorAgent**, independent hallucination risk check with fresh context (LLM call 3)
+
+Every step is fixed and fully traced, so the same query always runs the same path.
+
+#### `llama_index` mode: agentic ReAct loop (1–4 LLM calls)
+The `llama_agent` runs a **Think → Search → Observe** loop on a single system prompt, built from scratch in python on the Anthropic API (no LlamaIndex library). Each turn it emits one action: `SEARCH: <query>` to fetch more context (appended to a growing, cached context block), or `FINAL: <answer>` to finish. It decides dynamically when it has enough context and stops early when a search stops surfacing new chunks (a diminishing-returns guard), so it makes **1–4 LLM calls** instead of a fixed number. There is no separate Validator on this side; the loop self-rates its own confidence. The answer is returned in one batch (it is not token-streamed in this phase).
+
+#### `compare` mode: both pipelines, side by side (4–7 LLM calls)
+Runs the `custom` and `llama_index` pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. Validation runs on the custom answer (or on the llama_index answer if the custom pipeline short-circuits). This turns the system into an **evaluation workbench**: you can see exactly where the two approaches diverge and compare them on cost, latency, and answer quality.
 
 ---
 
@@ -201,14 +213,14 @@ This project was designed before any code was written. The core design documenta
 
 | Document | Contents |
 |---|---|
-| Project Scope | Architecture, tech stack, pipeline design, env vars |
-| Requirements and Assumptions | 40+ edge cases with acceptable behaviours, design decisions |
-| API Contract | All endpoints, request/response shapes, error types |
-| UI Specification | Every screen state, component behaviour, session state |
-| Implementation Plan | Build order, per-task file scope, test mapping, all mapped to decisions |
-| Decision Log | `DecisionLogs.md`: key design decisions, conflicts resolved, and rationale |
+| [Project Scope](docs/PROJECT_SCOPE.md) | Architecture, tech stack, pipeline design, env vars |
+| [Requirements and Assumptions](docs/REQUIREMENTS_AND_ASSUMPTIONS.md) | 40+ edge cases with acceptable behaviours, design decisions |
+| [API Contract](docs/API_CONTRACT.md) | All endpoints, request/response shapes, error types |
+| [UI Specification](docs/UI_SPECIFICATION.md) | Every screen state, component behaviour, session state |
+| [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) | Build order, per-task file scope, test mapping, all mapped to decisions |
+| [Decision Log](docs/DecisionLogs.md) | Key design decisions, conflicts resolved, and rationale |
 
-> Design-first development was a core principle of this project: the architecture, API contracts, requirements, and edge cases were all documented and reviewed before any code was written. The decision log (`DecisionLogs.md`) captures the key decisions and their rationale; the project's full internal log, including forward-looking design, is kept private.
+> Design-first development was a core principle of this project: the architecture, API contracts, requirements, and edge cases were all documented and reviewed before any code was written. The decision log captures the key decisions and their rationale.
 
 ---
 
