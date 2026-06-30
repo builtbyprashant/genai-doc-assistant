@@ -1,10 +1,4 @@
-# Agentic RAG Knowledge System: Phase 1
-
-> **⚠️ Superseded in places by later design decisions (tracked in the project's internal decision log).** Phase 1 does **not**
-> use the LlamaIndex library (decision **D-7**). Ingestion uses direct per-format parsers, pypdf,
-> python-docx, pandas, pyyaml, json, chardet (decision **D-2**), and `llama_index` mode is a genuine
-> ReAct search→answer loop built using python, interacting with the Anthropic API (**1–4** variable LLM calls), not a LlamaIndex
-> `ReActAgent`. Full LlamaIndex integration is deferred to Phase 2.
+# Agentic RAG Knowledge System: Project Scope
 
 ## Project Goal
 
@@ -351,7 +345,7 @@ def call_llm_with_retry(fn, *args):
 If the first call timed out at 20s and the retry also waits 20s before failing, user waits 40+ seconds. Reducing to 10s caps total wait at 30s. If the service is healthy it responds in 1-2s, 10s is still generous.
 
 **Why blanket retry (no error classification):**
-Phase 1 keeps it simple. All failures retry once. Phase 2 introduces retryable vs non-retryable error classification.
+The system keeps it simple. All failures retry once. A future version introduces retryable vs non-retryable error classification.
 
 **After exhausted retries, structured 503 response:**
 ```json
@@ -421,15 +415,15 @@ The same codebase runs locally via Docker Compose and on cloud infrastructure wi
 
 ---
 
-## Phase 2 Extensibility Hooks (built into Phase 1)
+## Extensibility Hooks for Future Versions
 
-These seams are added in Phase 1 at near-zero cost so Phase 2 is an addition, not a rewrite. They do not change Phase 1 behaviour.
+These seams are added now at near-zero cost so a future version is an addition, not a rewrite. They do not change current behaviour.
 
-**a) Vector store isolation.** `vector_store.py` is the **only** module that imports ChromaDB. All other code calls it through a narrow internal interface (`index_chunks`, `retrieve`, `list_documents`, `delete_document`, `chunk_count`). Phase 2 adds a `VectorStore` ABC + factory on top without touching callers.
+**a) Vector store isolation.** `vector_store.py` is the **only** module that imports ChromaDB. All other code calls it through a narrow internal interface (`index_chunks`, `retrieve`, `list_documents`, `delete_document`, `chunk_count`). A future version adds a `VectorStore` ABC + factory on top without touching callers.
 
-**b) File-saving isolation.** All file persistence goes through `save_upload()` in `app/services/storage.py`. Phase 1 writes to the local filesystem; Phase 2 swaps the body for S3, one function, no other code changes.
+**b) File-saving isolation.** All file persistence goes through `save_upload()` in `app/services/storage.py`. The system writes to the local filesystem; a future version swaps the body for S3, one function, no other code changes.
 
-**c) Chunking dispatch.** `chunk_service.py` routes by file extension even though every type currently calls the same `word_chunker()`. Phase 2 adds `row_chunker()` (CSV/Excel) and `page_chunker()` (PDF) to the same router without touching callers.
+**c) Chunking dispatch.** `chunk_service.py` routes by file extension even though every type currently calls the same `word_chunker()`. A future version adds `row_chunker()` (CSV/Excel) and `page_chunker()` (PDF) to the same router without touching callers.
 
 **d) `agent_mode` plumbed through the request.** `pipeline.py` never reads the `AGENT_MODE` env var directly. `config.py` reads it once as the default; the value is passed as a parameter down the call chain. The optional `agent_mode` field on `POST /query` overrides it per request (required for `compare` mode).
 
@@ -441,7 +435,7 @@ Anthropic prompt caching is configurable via `ANTHROPIC_CACHE_MODE` (`block` | `
 
 1. **`block` (default), system-prompt block caching.** The 3 LLM agents (Planner, Reasoner, Validator) each have a long system prompt that is identical across calls, marked with `cache_control` so Anthropic caches it after the first call. This is the only caching that reliably helps this single-turn app, the retrieved context + question change every query, so they are not reusable across calls (caching them would never hit). The 4 non-LLM steps make no LLM calls, so no caching applies. The Validator's *system prompt* is cached, which is fine, a static system prompt does not affect its independence (it still sees a fresh answer + context each query).
 
-2. **`prompt`, prompt-level caching.** A top-level `cache_control` marker caches the whole prompt prefix (it is applied to the last block of the prompt). Useful when a long prefix repeats verbatim, e.g. multi-turn conversation (a Phase 2 direction). For single-turn RAG its reuse is limited.
+2. **`prompt`, prompt-level caching.** A top-level `cache_control` marker caches the whole prompt prefix (it is applied to the last block of the prompt). Useful when a long prefix repeats verbatim, e.g. multi-turn conversation (a future-version direction). For single-turn RAG its reuse is limited.
 
 3. **`off`, no caching** (debugging / comparison).
 
@@ -525,9 +519,9 @@ QUERY_HASH_ALGO=sha256               # Algorithm for query hashing in logs.
                                       # Same query always produces same hash, cache key ready.
                                       # First 8 hex chars used: 4 billion possible values.
 
-# ── Reserved for Phase 2 (present now, unused in Phase 1) ────────────────────
-GROUNDING_THRESHOLD=0.6              # RESERVED FOR PHASE 2, not read by Phase 1 code.
-                                      # Phase 2 deterministic grounding check: answers scoring
+# ── Reserved for a future version (present now, unused) ────────────────────
+GROUNDING_THRESHOLD=0.6              # RESERVED FOR A FUTURE VERSION, not read by current code.
+                                      # Future-version deterministic grounding check: answers scoring
                                       # below this trigger a conditional ValidatorAgent LLM call.
 ```
 
@@ -555,7 +549,7 @@ genai-doc-assistant/
 │   │   ├── validator.py         ← ValidatorAgent (LLM call)
 │   │   └── llama_agent.py       ← python ReAct loop (AGENT_MODE=llama_index)
 │   ├── services/
-│   │   ├── storage.py           ← save_upload(), isolates file saving (S3 swap in Phase 2)
+│   │   ├── storage.py           ← save_upload(), isolates file saving (S3 swap in a future version)
 │   │   ├── document_loader.py   ← direct per-format parsers (validate, then parse)
 │   │   ├── chunk_service.py     ← chunking router (by extension) → word_chunker() today
 │   │   └── vector_store.py      ← ChromaDB interface, ONLY file that imports ChromaDB
@@ -603,7 +597,7 @@ streamlit run frontend/app.py
 
 ---
 
-## Limitations (Phase 1)
+## Limitations
 
 - Single-turn Q&A only (no conversation history)
 - ChromaDB is embedded, not suitable for concurrent multi-user load at scale
@@ -613,10 +607,10 @@ streamlit run frontend/app.py
 - File size limit: 10MB per document
 - Query response time is ~2–4 seconds typical on the Haiku default (3 LLM calls: Planner + Reasoner + Validator, plus 1 encoder call for ReRanker); in custom mode the answer streams, so the first words appear in ~2–4s rather than the full wait (D-9, D-10)
 - Embedding model (all-MiniLM-L6-v2) has a 256 token (~192 word) limit, chunk size set to 200 words to respect this limit
-- CSV and Excel documents with many columns or long cell values produce lower quality retrieval, row-aware chunking deferred to Phase 2
+- CSV and Excel documents with many columns or long cell values produce lower quality retrieval, row-aware chunking deferred to a future version
 - Embedding model is optimised for general English, technical, medical, or non-English documents may produce lower retrieval quality
 - **Original uploaded files are not persisted**, only chunks are stored in ChromaDB. If the ChromaDB volume is lost or deleted, all indexed content is gone and documents must be re-uploaded. There is no way to recover without the original files.
-- `vector_store.py` is tightly coupled to ChromaDB, swapping to another vector database requires rewriting this file. Backend abstraction layer is deferred to Phase 2.
+- `vector_store.py` is tightly coupled to ChromaDB, swapping to another vector database requires rewriting this file. Backend abstraction layer is deferred to a future version.
 
 ---
 
@@ -684,44 +678,44 @@ backend:
 
 ---
 
-## Out of Scope for Phase 1
+## Scoped for Later
 
 | Feature | Reason deferred |
 |---|---|
 | OCR for scanned PDFs | Heavy dependency (Tesseract), not required for capstone |
 | Password-protected PDF unlocking | Niche use case, security complexity |
-| Multi-tenant document isolation | Requires authentication, session management, Phase 2 |
-| Authentication and access control | Phase 2 |
-| Streaming LLM responses | **Done in Phase 1 (D-10)**, `custom` mode streams over chunked HTTP (`POST /query/stream`, no WebSocket). Phase 2 may add SSE + `llama_index`/`compare` streaming. |
-| Multi-turn conversation history | Phase 2 (where `prompt`-level caching, D-12, pays off) |
-| Document versioning and update history | Phase 2 |
-| Concurrent write safety at scale | Embedded ChromaDB limitation, Phase 2 swaps to managed DB |
-| Language detection and multilingual support | Embedding model is primarily English, Phase 2 |
-| Grafana / external observability | Phase 2 |
-| AWS deployment | Phase 2 |
-| S3 persistence of original uploaded files | Phase 1 discards original bytes after parsing, Phase 2 stores originals in S3 for recovery |
-| Vector store backend abstraction layer | Phase 1 couples directly to ChromaDB, Phase 2 introduces abstract interface supporting ChromaDB and Pinecone via env var |
-| Data lifecycle policy (TTL, auto-expiry) | Phase 1 is user-managed deletion only, Phase 2 adds S3 lifecycle policies |
+| Multi-tenant document isolation | Requires authentication, session management, future version |
+| Authentication and access control | Future version |
+| Streaming LLM responses | **Done (D-10)**, `custom` mode streams over chunked HTTP (`POST /query/stream`, no WebSocket). A future version may add SSE + `llama_index`/`compare` streaming. |
+| Multi-turn conversation history | Future version (where `prompt`-level caching, D-12, pays off) |
+| Document versioning and update history | Future version |
+| Concurrent write safety at scale | Embedded ChromaDB limitation, a future version swaps to managed DB |
+| Language detection and multilingual support | Embedding model is primarily English, future version |
+| Grafana / external observability | Future version |
+| AWS deployment | Future version |
+| S3 persistence of original uploaded files | The current version discards original bytes after parsing, a future version stores originals in S3 for recovery |
+| Vector store backend abstraction layer | The current version couples directly to ChromaDB, a future version introduces abstract interface supporting ChromaDB and Pinecone via env var |
+| Data lifecycle policy (TTL, auto-expiry) | The current version is user-managed deletion only, a future version adds S3 lifecycle policies |
 
 ---
 
 ## Scope for Future Versions
 
-Phase 1 is a self-contained local system. The items below are the planned direction for future
-versions, building on the extensibility seams already in place (see *Phase 2 Extensibility Hooks*).
+The current version is a self-contained local system. The items below are the planned direction for future
+versions, building on the extensibility seams already in place (see *Extensibility Hooks for Future Versions*).
 These are production-hardening and feature additions; none of them change the core retrieval and
-grounding behaviour that Phase 1 establishes.
+grounding behaviour that the current version establishes.
 
 ### Deployment and infrastructure
 - **AWS deployment via Terraform.** Move from local Docker Compose to a reproducible cloud
   deployment (ECS for the services, S3 for storage, ElastiCache/Redis for a background ingestion
   queue), defined as infrastructure-as-code so an environment can be stood up or torn down
   predictably.
-- **Vector store backend abstraction.** Phase 1 couples directly to embedded ChromaDB. A future
+- **Vector store backend abstraction.** The current version couples directly to embedded ChromaDB. A future
   version introduces a narrow vector-store interface with a factory, so the backend can be swapped
   (for example to a managed service such as Pinecone) through an environment variable with no
   application-code change. The embedding model stays the same; only the storage layer changes.
-- **Original file persistence and lifecycle.** Phase 1 discards the original bytes after parsing. A
+- **Original file persistence and lifecycle.** The current version discards the original bytes after parsing. A
   future version stores originals in S3 so the index can be rebuilt from source, with lifecycle
   policies for TTL-based auto-expiry.
 
@@ -729,26 +723,26 @@ grounding behaviour that Phase 1 establishes.
 - **External observability.** Ship the existing structured logs to a dashboarding stack (CloudWatch
   plus Loki into Grafana) so per-query timing, cost, and error rates are visible over time, not only
   in raw logs. The per-request correlation id and the `query_completed` / `llm_usage` events from
-  Phase 1 feed this directly.
-- **Error classification for retries.** Phase 1 uses a single blanket retry. A future version
+  the current version feed this directly.
+- **Error classification for retries.** The current version uses a single blanket retry. A future version
   classifies API errors so only transient failures (timeout, rate limit, 5xx) are retried, while
   permanent ones (bad request, auth) fail fast with a precise reason for the operator.
-- **PII redaction in logs.** Phase 1 already hashes the raw query for correlation. A future version
+- **PII redaction in logs.** The current version already hashes the raw query for correlation. A future version
   adds field-level redaction of any personal data that could appear in logged content (for example
   via a redaction service), keeping logs debuggable but privacy-safe.
 
 ### Retrieval and ingestion
-- **Format-aware chunking.** Phase 1 chunks every format with a fixed word window. A future version
+- **Format-aware chunking.** The current version chunks every format with a fixed word window. A future version
   adds row-aware chunking for CSV and Excel and better handling of complex PDFs (multi-column
   layouts, tables), so document structure is preserved for retrieval.
-- **Multilingual support.** The Phase 1 embedding model is primarily English. Because the embedding
+- **Multilingual support.** The current embedding model is primarily English. Because the embedding
   model is already a configuration knob (subject to the re-index rule), a future version can swap in
   a multilingual model to raise quality on non-English documents.
 
 ### Product features
-- **Multi-turn conversation.** Phase 1 is single-turn. A future version adds conversation history
+- **Multi-turn conversation.** The current version is single-turn. A future version adds conversation history
   (for example session state in a managed store) so follow-up questions can build on prior turns.
-- **Authentication and multi-tenant isolation.** Phase 1 assumes a single trusted user. A future
+- **Authentication and multi-tenant isolation.** The current version assumes a single trusted user. A future
   version adds authentication (starting with API-key middleware, with room for SSO / federated
   login) and per-user document isolation, so one deployment can serve multiple users safely.
 - **Concurrent-write safety at scale.** Embedded ChromaDB has a single-writer limitation. The managed
