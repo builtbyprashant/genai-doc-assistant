@@ -1,8 +1,8 @@
-# Agentic RAG Knowledge System: API Contract (Phase 1)
+# Agentic RAG Knowledge System: API Contract
 
 ## Overview
 
-This document defines the complete REST API contract for the Phase 1 backend (FastAPI).
+This document defines the complete REST API contract for the backend (FastAPI).
 It is the authoritative reference for both backend implementation and frontend (Streamlit) integration.
 Every endpoint, request shape, response shape, status code, and error format is defined here.
 
@@ -54,8 +54,8 @@ All timestamps are ISO 8601 UTC strings:
 All boolean fields use JSON `true` / `false`. Never `"true"` / `"false"` as strings.
 
 ### Pagination
-Phase 1 has no pagination. All list endpoints return complete results.
-Document this as a known limitation, Phase 2 adds cursor-based pagination on `/documents`.
+There is currently no pagination. All list endpoints return complete results.
+Document this as a known limitation, a future version adds cursor-based pagination on `/documents`.
 
 ---
 
@@ -352,8 +352,8 @@ pipeline finishes (~2–4s typical on the Haiku default, D-9). For a streamed an
 shows the first words in ~2–4s instead of waiting for the whole response, use
 `POST /query/stream` (custom mode, D-10).
 
-> **Phase 2 note:** As query complexity and document corpus grow, response times may exceed
-> acceptable thresholds for synchronous calls. Phase 2 will introduce an asynchronous query
+> **Future version note:** As query complexity and document corpus grow, response times may exceed
+> acceptable thresholds for synchronous calls. A future version will introduce an asynchronous query
 > pattern: `POST /query` returns a `request_id` immediately, and the client polls
 > `GET /query/{request_id}` for the result. The result store will use
 > **AWS ElastiCache (Redis)** with a TTL of 1 hour. The response shape will remain identical,
@@ -718,7 +718,7 @@ following the same rules as the single-pipeline response.
 ### POST /query/stream
 
 Same request body as `POST /query`, but the answer is **streamed** so the first words reach the
-UI in ~2–4 s instead of after the whole answer is generated. Implemented in Phase 1 (D-10).
+UI in ~2–4 s instead of after the whole answer is generated. Implemented (D-10).
 
 - **Scope:** `custom` mode streams the answer token-by-token. `llama_index` and `compare` are not
   token-streamed, for those this endpoint runs the pipeline batch and emits the whole answer in
@@ -736,7 +736,7 @@ UI in ~2–4 s instead of after the whole answer is generated. Implemented in Ph
 - **Short-circuit** (empty store / below threshold): no answer text is streamed; the metadata frame
   carries `short_circuit: true` and the reason, exactly like `/query`.
 
-> **Phase 2 note:** Phase 2 may switch the wire format to Server-Sent Events (SSE) and add
+> **Future version note:** A future version may switch the wire format to Server-Sent Events (SSE) and add
 > llama-mode streaming; the batch `POST /query` remains available either way.
 
 ---
@@ -806,9 +806,9 @@ How the Streamlit frontend uses each endpoint:
 
 ---
 
-## Phase 2 Changes (Forward Reference)
+## Future Version Changes (Forward Reference)
 
-The following changes are planned for Phase 2. The Phase 1 API contract is designed to
+The following changes are planned for a future version. The current API contract is designed to
 accommodate them without breaking changes where possible.
 
 | Change | Impact on contract |
@@ -817,4 +817,4 @@ accommodate them without breaking changes where possible.
 | Cursor-based pagination on GET /documents | Adds `cursor`, `limit`, `next_cursor` fields. Backward compatible with default limit = all. |
 | API key authentication | Adds `Authorization: Bearer <key>` header requirement. New 401 error type. |
 | Multi-turn conversation | Adds optional `session_id` and `conversation_history` fields to POST /query body. |
-| Streaming responses | **Done in Phase 1 (D-10)**, `POST /query/stream` streams the `custom`-mode answer (text + `0x1E` + JSON metadata). Phase 2 may move it to Server-Sent Events and add `llama_index` streaming. Existing `/query` remains. |
+| Streaming responses | **Done (D-10)**, `POST /query/stream` streams the `custom`-mode answer (text + `0x1E` + JSON metadata). A future version may move it to Server-Sent Events and add `llama_index` streaming. Existing `/query` remains. |
