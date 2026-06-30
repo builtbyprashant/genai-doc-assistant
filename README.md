@@ -1,7 +1,7 @@
 # Agentic RAG Knowledge System
 
 [![CI](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen)](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/builtbyprashant/genai-doc-assistant/graph/badge.svg)](https://codecov.io/gh/builtbyprashant/genai-doc-assistant)
 [![Tests](https://img.shields.io/badge/tests-105%20passing-brightgreen)](https://github.com/builtbyprashant/genai-doc-assistant/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -484,7 +484,7 @@ The project follows production-grade engineering practices end to end.
 ### Continuous integration and delivery (CI/CD)
 - **GitHub Actions** runs on every push and every pull request (status is shown by the build badge at the top of this README).
 - **Lint and test on every change.** Linting (`ruff`) and the full test suite run on all pushes and PRs, for fast feedback.
-- **Coverage on every run.** Tests run under coverage (`pytest --cov=app`), and a coverage report is posted to the workflow run summary so coverage is visible per run.
+- **Coverage on every run.** Tests run under coverage (`pytest --cov=app`), and a coverage report is posted to the workflow run summary and uploaded to Codecov (the live badge at the top), so coverage is visible per run.
 - **Images built only when they can break.** The Docker image build is path-gated: it runs only on a push to `main` that changed an image-affecting file (a requirements file or a Dockerfile), so everyday commits run lint and test only. Build-layer caching keeps warm builds short.
 - **Cache keep-warm.** A scheduled job refreshes the dependency and model-download caches so a low-activity repository does not go cold.
 

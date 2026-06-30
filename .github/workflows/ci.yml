@@ -76,6 +76,13 @@ jobs:
           HF_HUB_DISABLE_SYMLINKS_WARNING: "1"
         run: pytest -q --cov=app --cov-report=term-missing --cov-report=xml
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Coverage summary
         if: always()
         run: |
