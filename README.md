@@ -6,6 +6,30 @@
 
 ---
 
+## Table of Contents
+
+- [What It Is](#what-it-is)
+- [What Makes This Different](#what-makes-this-different)
+- [Demo](#demo)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Supported Document Formats](#supported-document-formats)
+- [How It Works](#how-it-works)
+- [Design Documentation](#design-documentation)
+- [Configuration](#configuration)
+- [API](#api)
+- [Running Tests](#running-tests)
+- [Industry-Standard Best Practices](#industry-standard-best-practices)
+- [Limitations](#limitations)
+- [Roadmap (Future Version)](#roadmap-future-version)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Acknowledgements](#acknowledgements)
+- [Author](#author)
+- [License](#license)
+
+---
+
 ## What It Is
 
 An AI-powered document intelligence system that allows users to upload enterprise or personal documents in multiple formats and ask natural language questions. The system retrieves relevant content using semantic search and generates grounded and cited answers with full cycle observability.
