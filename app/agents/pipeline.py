@@ -314,45 +314,10 @@ def _log_completed(question, mode, total_ms, trace, llm_calls, short_circuit,
 
 # ── streaming (custom mode) ───────────────────────────────────────────────────
 
-class _AnswerExtractor:
-    """Pull just the answer text out of a streamed structured reply.
-
-    The Reasoner replies as `ANSWER: ... CONFIDENCE: ... REASON: ... SOURCES: ...`,
-    so while streaming we hide the `ANSWER:` prefix and stop emitting at `CONFIDENCE:`.
-    A few trailing chars are held back each step so a partially-arrived stop marker
-    never leaks into the visible answer; `flush()` releases the remainder at the end.
-    """
-
-    def __init__(self, start: str, stop: str):
-        self.start, self.stop = start, stop
-        self.emitted = 0
-
-    def _region(self, raw: str):
-        after = raw
-        if self.start:
-            if self.start not in raw:
-                return None, False
-            after = raw.split(self.start, 1)[1]
-        if self.stop in after:
-            return after.split(self.stop, 1)[0], True
-        return after, False
-
-    def feed(self, raw: str) -> str:
-        region, stopped = self._region(raw)
-        if region is None:
-            return ""
-        end = len(region) if stopped else max(self.emitted, len(region) - len(self.stop))
-        out = region[self.emitted:end]
-        self.emitted = end
-        return out
-
-    def flush(self, raw: str) -> str:
-        region, _ = self._region(raw)
-        if region is None:
-            region = raw
-        out = region[self.emitted:]
-        self.emitted = len(region)
-        return out
+# The streaming answer-extractor lives in llm.py so the llama loop can reuse it without a
+# circular import (pipeline imports llama_agent at module load). Aliased here for the custom
+# path and the existing test that constructs `pipeline._AnswerExtractor`.
+_AnswerExtractor = llm._AnswerExtractor
 
 
 def run_pipeline_stream(
@@ -383,6 +348,11 @@ def run_pipeline_stream(
     if agent_mode == "custom":
         yield from _custom_stream(question, filter_filenames, store, settings, top_k,
                                   safety_ms, started, request_id)
+        return
+
+    if agent_mode == "llama_index":
+        yield from _llama_stream(question, filter_filenames, store, settings, top_k,
+                                 started, request_id)
         return
 
     result = run_pipeline(
@@ -494,3 +464,37 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
         "confidence_reason": parsed["confidence_reason"], "sources_used": parsed["sources_used"],
         "validation": validation, "chunks": ranked, "trace": trace, "llm_calls": 3,
     })
+
+
+def _llama_stream(question, filter_filenames, store, settings, top_k, started, request_id=None):
+    """Stream llama_index mode: relay the ReAct loop's token deltas for known-final turns
+    (Case 1), then build the same response envelope as the batch path (`_llama_core` plus the
+    single-mode assembly in `run_pipeline`). Safety + filters are pre-checked by the caller,
+    mirroring `_custom_stream`."""
+    usage = llm.new_usage()
+
+    if store.chunk_count() == 0:
+        trace = [_step("LlamaReAct", "skipped", "no_documents_indexed")]
+        core = _short_circuit("no_documents_indexed", trace,
+                              "No documents are indexed. Cannot retrieve context.", llm_calls=0)
+    else:
+        _check_filter(filter_filenames, store)
+        run = yield from llama_agent.run_llama_agent_stream(
+            question, store, filter_filenames, top_k=top_k, usage=usage)
+        core = {
+            "success": True, "short_circuit": False, "short_circuit_reason": None,
+            "answer": run["answer"], "confidence": run["confidence"], "confidence_reason": "",
+            "sources_used": run["sources_used"], "validation": dict(_NEUTRAL_VALIDATION),
+            "chunks": run["chunks"], "trace": run["trace"], "llm_calls": run["llm_calls"],
+        }
+
+    elapsed_ms = _ms(started)
+    tokens = llm.summarize_usage(usage, settings.anthropic_model)
+    _log_completed(question, "llama_index", elapsed_ms, core["trace"], core["llm_calls"],
+                   core["short_circuit"], request_id,
+                   tokens=tokens["tokens"], cost_usd=tokens["cost_usd"])
+    response = _single_response(question, core, elapsed_ms, True, True, "llama_index")
+    response["tokens"] = tokens["tokens"]
+    response["cost_usd"] = tokens["cost_usd"]
+    response["cache_read_tokens"] = tokens["cache_read_tokens"]
+    yield ("done", response)

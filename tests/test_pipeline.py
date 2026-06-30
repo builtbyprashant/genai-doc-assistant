@@ -484,6 +484,62 @@ def test_pipeline_stream_empty_store_short_circuits(monkeypatch, tmp_path):
     assert done["short_circuit_reason"] == "no_documents_indexed"
 
 
+def test_llama_stream_forces_final_at_max_steps_and_streams_tokens(monkeypatch):
+    # Model never FINALs and every search surfaces new chunks (guard never trips), so the loop
+    # reaches max steps and forces a synthesis — streamed via stream_text (Case 1).
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "SEARCH: keep looking")
+
+    def fake_stream(system, user, **kw):
+        for piece in ["FINAL: Synthesized ", "from the ", "context.\nCONF", "IDENCE: LOW"]:
+            yield piece
+    monkeypatch.setattr(llm, "stream_text", fake_stream)
+
+    tokens, result = [], None
+    gen = llama_agent.run_llama_agent_stream("question", _FreshStore())
+    try:
+        while True:
+            kind, payload = next(gen)
+            if kind == "token":
+                tokens.append(payload)
+    except StopIteration as finished:
+        result = finished.value
+
+    streamed = "".join(tokens)
+    assert streamed.strip() == "Synthesized from the context."
+    assert all(tag not in streamed for tag in ("FINAL:", "CONFIDENCE"))
+    assert result["answer"] == "Synthesized from the context."
+    assert result["confidence"] == "low"
+    assert result["llm_calls"] == llama_agent.MAX_STEPS  # 3 searches + 1 streamed synthesis
+
+
+def test_pipeline_stream_llama_index_streams_diminishing_returns_final(monkeypatch, indexed_store):
+    # First decision turn says SEARCH; the re-search surfaces only already-seen chunks, so the
+    # diminishing-returns guard forces a synthesis — streamed in llama_index mode (Case 1).
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "SEARCH: more on transfer")
+
+    def fake_stream(system, user, **kw):
+        for piece in ["FINAL: Patients ", "transfer after ", "four hours.\nCONFIDENCE: HIGH"]:
+            yield piece
+    monkeypatch.setattr(llm, "stream_text", fake_stream)
+
+    tokens, done = [], None
+    for kind, payload in pipeline.run_pipeline_stream(
+            "When can ICU patients transfer?", agent_mode="llama_index", store=indexed_store):
+        if kind == "token":
+            tokens.append(payload)
+        else:
+            done = payload
+
+    answer = "".join(tokens)
+    assert "transfer after" in answer
+    assert all(tag not in answer for tag in ("FINAL:", "CONFIDENCE"))
+    assert done["mode"] == "llama_index"
+    assert done["short_circuit"] is False
+    assert done["confidence"] == "high"
+    assert answer.strip() == done["answer"].strip()
+    assert "validation" in done and "tokens" in done and "cost_usd" in done
+
+
 def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_store):
     """The backend logs one structured per-query line carrying the per-step timings —
     not just the uvicorn access line — and never the raw query (only its hash)."""

@@ -46,7 +46,28 @@ OVERLAP_STOP_RATIO = 0.7
 
 
 def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usage=None) -> dict:
-    """Run the loop. Returns answer, sources_used, llm_calls, chunks, trace."""
+    """Batch entry point: run the loop without streaming — every turn uses the retryable
+    `llm.complete`. Returns the result dict. Unchanged behaviour for the batch/compare paths."""
+    gen = _run(question, store, filter_filenames, top_k, usage, stream=False)
+    try:
+        while True:
+            next(gen)
+    except StopIteration as finished:
+        return finished.value
+
+
+def run_llama_agent_stream(question: str, store, filter_filenames=None, top_k=None, usage=None):
+    """Streaming entry point: a generator that yields ('token', text) for the answer body of a
+    KNOWN-final turn — the forced synthesis at max steps and the diminishing-returns synthesis
+    (Case 1) — and returns the same result dict. The model-chosen FINAL on a decision turn is
+    not streamed yet (Case 2)."""
+    return (yield from _run(question, store, filter_filenames, top_k, usage, stream=True))
+
+
+def _run(question, store, filter_filenames, top_k, usage, stream):
+    """Shared ReAct loop. `stream=False` runs every turn through the retryable `llm.complete`
+    and yields nothing; `stream=True` runs the known-final synthesis through `llm.stream_text`
+    and yields its answer deltas (search/decision turns still use `llm.complete`)."""
     top_k = top_k or get_settings().top_k_retrieval
 
     seen: list[dict] = []
@@ -77,6 +98,27 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
         return llm.complete(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
                             usage=usage, cache_context=cache_block())
 
+    def final_now():
+        """Known-final synthesis. Streaming: emit the answer body token-by-token via
+        `llm.stream_text`, reusing the shared extractor — start `FINAL:` hides the loop
+        scaffolding, stop `CONFIDENCE:` bounds the tail. Batch: the retryable `llm.complete`.
+        Returns (answer, confidence) either way. (Always a generator because of the `yield`
+        in the streaming branch; the batch branch simply returns without yielding.)"""
+        if not stream:
+            return _extract_final(ask(FORCE_FINAL))
+        extractor = llm._AnswerExtractor(start="FINAL:", stop="CONFIDENCE:")
+        raw = ""
+        for delta in llm.stream_text(LLAMA_SYSTEM, FORCE_FINAL, agent="LlamaReAct",
+                                     usage=usage, cache_context=cache_block()):
+            raw += delta
+            emit = extractor.feed(raw)
+            if emit:
+                yield ("token", emit)
+        tail = extractor.flush(raw)
+        if tail:
+            yield ("token", tail)
+        return _extract_final(raw)
+
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 
     answer = ""
@@ -85,8 +127,8 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
         t = time.perf_counter()
 
         if step == MAX_STEPS:
-            # Out of search budget — force a direct answer from everything gathered.
-            answer, confidence = _extract_final(ask(FORCE_FINAL))
+            # Out of search budget — a known final; stream the synthesis when streaming (Case 1).
+            answer, confidence = yield from final_now()
             llm_calls += 1
             trace.append(_step(step, "final", _ms(t), reason="max_steps"))
             break
@@ -107,9 +149,9 @@ def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usa
             trace.append(_step(step, "search", step_ms, query=query,
                                new_chunks=added, overlap=round(overlap, 2)))
             if added == 0 or overlap >= OVERLAP_STOP_RATIO:
-                # Diminishing returns — synthesize now rather than search again.
+                # Diminishing returns — a known final; stream the synthesis when streaming (Case 1).
                 t2 = time.perf_counter()
-                answer, confidence = _extract_final(ask(FORCE_FINAL))
+                answer, confidence = yield from final_now()
                 llm_calls += 1
                 trace.append(_step(step, "final", _ms(t2), reason="diminishing_returns"))
                 break

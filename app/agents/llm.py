@@ -203,6 +203,50 @@ def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[s
             pass
 
 
+class _AnswerExtractor:
+    """Pull just the answer text out of a streamed structured reply.
+
+    A reply shaped `<start> ... <stop> ...` is streamed; everything up to and including
+    `start` is hidden, the middle is emitted, and emission stops at `stop`. A few trailing
+    chars are held back each step so a partially-arrived stop marker never leaks into the
+    visible answer; `flush()` releases the remainder at the end. Shared by custom mode
+    (start `ANSWER:`) and the llama loop's final turns (start `FINAL:`), both stopping at
+    `CONFIDENCE:`. When `start` is absent from the text so far, nothing is emitted yet — which
+    is exactly how a llama turn stays silent until it commits to `FINAL:` rather than `SEARCH:`.
+    """
+
+    def __init__(self, start: str, stop: str):
+        self.start, self.stop = start, stop
+        self.emitted = 0
+
+    def _region(self, raw: str):
+        after = raw
+        if self.start:
+            if self.start not in raw:
+                return None, False
+            after = raw.split(self.start, 1)[1]
+        if self.stop in after:
+            return after.split(self.stop, 1)[0], True
+        return after, False
+
+    def feed(self, raw: str) -> str:
+        region, stopped = self._region(raw)
+        if region is None:
+            return ""
+        end = len(region) if stopped else max(self.emitted, len(region) - len(self.stop))
+        out = region[self.emitted:end]
+        self.emitted = end
+        return out
+
+    def flush(self, raw: str) -> str:
+        region, _ = self._region(raw)
+        if region is None:
+            region = raw
+        out = region[self.emitted:]
+        self.emitted = len(region)
+        return out
+
+
 def extract_json(raw: str) -> dict:
     """Pull the first JSON object out of a model response.
 
