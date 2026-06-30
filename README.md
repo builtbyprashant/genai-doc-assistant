@@ -495,7 +495,7 @@ The project follows production-grade engineering practices end to end.
 
 ### Code quality and coverage
 - **Linting.** `ruff` enforces a consistent style (Python 3.11 target, 110-character lines).
-- **Coverage measurement.** `pytest-cov` measures coverage of the `app/` package on every CI run (currently 91%), reported with missing-line detail and an XML artifact.
+- **Coverage measurement.** `pytest-cov` measures coverage of the `app/` package on every CI run, reported with missing-line detail and an XML artifact.
 - **Small, reviewable changes.** One commit per task in Conventional Commits format, so history maps cleanly to the design.
 
 ### Security practices
