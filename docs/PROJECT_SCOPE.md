@@ -1,10 +1,38 @@
 # Agentic RAG Knowledge System: Project Scope
 
+## Table of Contents
+
+- [Project Goal](#project-goal)
+- [Problem Statement](#problem-statement)
+- [Who Uses It](#who-uses-it)
+- [What Makes It Agentic](#what-makes-it-agentic)
+- [What the System Does](#what-the-system-does)
+- [Non-Functional Requirements](#non-functional-requirements)
+- [Engineering Practices](#engineering-practices)
+- [Tech Stack](#tech-stack)
+- [Three Models in the System](#three-models-in-the-system)
+- [Supported Document Formats](#supported-document-formats)
+- [Network Design](#network-design)
+- [Task Mapping](#task-mapping)
+- [Reliability and Safety Controls](#reliability-and-safety-controls)
+- [Key Design Principle](#key-design-principle)
+- [Extensibility Hooks for Future Versions](#extensibility-hooks-for-future-versions)
+- [Prompt Caching Strategy (D-12)](#prompt-caching-strategy-d-12)
+- [Environment Variables](#environment-variables)
+- [Project Folder Structure](#project-folder-structure)
+- [Limitations](#limitations)
+- [Docker Compose Design](#docker-compose-design)
+- [Scope for Future Versions](#scope-for-future-versions)
+
+---
+
 ## Project Goal
 
 Build an AI-powered document intelligence system that allows users to upload enterprise documents in multiple formats and ask natural language questions. The system retrieves relevant content using semantic search and generates grounded, cited answers using a multi-agent reasoning pipeline.
 
 This is delivered as both a **web interface** (Streamlit) for human users and a **REST API** (FastAPI) for programmatic access. The entire system runs with a single command via Docker Compose on any machine.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -12,11 +40,15 @@ This is delivered as both a **web interface** (Streamlit) for human users and a 
 
 Knowledge locked in documents (PDFs, spreadsheets, text reports) is hard to query. A user must manually read and search to find answers. This system makes any document collection **conversational**: upload your documents, ask questions in plain English, get grounded answers with source citations.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Who Uses It
 
 Any user, technical or non-technical, who needs to extract insights from documents without manually reading them. Designed as a general-purpose system with no domain restrictions.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -42,6 +74,8 @@ Rather than a single LLM call, the system uses a **7-step agent pipeline** with 
 | ReRanker | Reorders retrieved chunks by answer relevance using cross-encoder model (ms-marco-MiniLM-L-6-v2). Encoder, no LLM call. |
 
 Each step has a specific responsibility. The output of each step feeds the next. A step failing or short-circuiting stops the pipeline immediately, no wasted LLM calls downstream.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -70,6 +104,8 @@ Each step has a specific responsibility. The output of each step feeds the next.
 - `/health` endpoint with system stats (chunks indexed, status); the UI polls it at most once
   per 30s, matching the Docker healthcheck interval
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Non-Functional Requirements
@@ -83,6 +119,8 @@ Each step has a specific responsibility. The output of each step feeds the next.
 | Portable | All config via environment variables (.env); no hardcoded URLs, paths, or secrets |
 | Safe | Four input safety layers (cheapest first); defence in depth output controls (ONLY rule + threshold + validator); blanket retry with half timeout; log sanitisation for PII |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Engineering Practices
@@ -93,6 +131,8 @@ The project is built and verified to production standards (full detail in the RE
 - **Test-driven development.** 105 tests across five suites (vector store, chunking, document loading, the agent pipeline, the API), written alongside each service and shipped in the same commit as the code.
 - **Code quality and coverage.** `ruff` enforces a consistent style; `pytest-cov` measures coverage of the `app/` package on every CI run.
 - **Security.** The Anthropic API key is read only from the host environment, never written to `.env` or committed; `.env` is gitignored and only `.env.example` is tracked, and git history is verified free of secrets before release. Configuration is environment-only (no hardcoded secrets, URLs, or paths). Input is validated on raw bytes, a SafetyGuard screens for prompt injection, raw queries are never logged (only a SHA-256 hash), and answers are grounded with an independent Validator check.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -112,6 +152,8 @@ The project is built and verified to production standards (full detail in the RE
 | Caching | Anthropic prompt caching (configurable: block / prompt / off, D-12) | Reduces token cost and latency on repeated agent system prompts; cache hits logged via `llm_usage` |
 | Deployment | Docker Compose + Python venv | Docker for production, venv for local development |
 | Logging | Structured JSON to stdout | Compatible with any log shipper in future phases |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -134,6 +176,8 @@ The system uses three models (two local encoders and one cloud LLM) and no RAG f
 No RAG framework is used: both modes are built from scratch in python (direct per-format parsers for ingestion, D-2; a hand-written ReAct loop for `llama_index` mode, D-7), so every component is explicit and observable rather than abstracted away.
 
 **Both sentence-transformer models (~80MB each) are pre-downloaded in the Docker image.**
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -199,6 +243,8 @@ Total model calls:       4 per query
 
 See architecture diagram (PHASE1_ARCHITECTURE.png) for the visual version.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Network Design
@@ -223,6 +269,8 @@ Config:
 
 See network diagram (PHASE1_NETWORK.png) for the visual version.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Task Mapping
@@ -238,6 +286,8 @@ See network diagram (PHASE1_NETWORK.png) for the visual version.
 | 7. RAG pipeline | reasoner_agent(), context-grounded LLM generation with prompt caching |
 | 8. Agent-based reasoning | pipeline.py, 7-step orchestrator: SafetyGuard → Planner → Retriever → Threshold → ReRanker → Reasoner → Validator. 3 LLM agents + 4 non-LLM steps. |
 | 9. Reliability and safety | Input guardrails, similarity threshold short-circuit, output validation, retry pattern, log sanitisation |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -405,6 +455,8 @@ MD5 is not cryptographically secure. SHA-256 is the correct habit even for non-s
 **Env var:** `QUERY_HASH_ALGO=sha256`, algorithm is configurable, default sha256.
 | 10. Deploy and document | Docker Compose deployment + README + architecture docs |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Key Design Principle
@@ -412,6 +464,8 @@ MD5 is not cryptographically secure. SHA-256 is the correct habit even for non-s
 **Tasks 2–9 are application layer. They are fully decoupled from infrastructure.**
 
 The same codebase runs locally via Docker Compose and on cloud infrastructure without any application code changes. Only environment variables and infrastructure definitions differ between environments. This follows 12-factor app principles and makes the system portable and maintainable.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -427,6 +481,8 @@ These seams are added now at near-zero cost so a future version is an addition, 
 
 **d) `agent_mode` plumbed through the request.** `pipeline.py` never reads the `AGENT_MODE` env var directly. `config.py` reads it once as the default; the value is passed as a parameter down the call chain. The optional `agent_mode` field on `POST /query` overrides it per request (required for `compare` mode).
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Prompt Caching Strategy (D-12)
@@ -440,6 +496,8 @@ Anthropic prompt caching is configurable via `ANTHROPIC_CACHE_MODE` (`block` | `
 3. **`off`, no caching** (debugging / comparison).
 
 Cache effectiveness is observable in the logs: every LLM call emits an `llm_usage` event with `cache_read_input_tokens` (served from cache) and `cache_creation_input_tokens` (written to cache).
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -529,6 +587,8 @@ GROUNDING_THRESHOLD=0.6              # RESERVED FOR A FUTURE VERSION, not read b
 
 The switch requires only a `.env` change and container restart, no code changes.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Project Folder Structure
@@ -595,6 +655,8 @@ uvicorn app.api.main:app --reload --port 8000
 streamlit run frontend/app.py
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Limitations
@@ -611,6 +673,8 @@ streamlit run frontend/app.py
 - Embedding model is optimised for general English, technical, medical, or non-English documents may produce lower retrieval quality
 - **Original uploaded files are not persisted**, only chunks are stored in ChromaDB. If the ChromaDB volume is lost or deleted, all indexed content is gone and documents must be re-uploaded. There is no way to recover without the original files.
 - `vector_store.py` is tightly coupled to ChromaDB, swapping to another vector database requires rewriting this file. Backend abstraction layer is deferred to a future version.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -676,26 +740,7 @@ backend:
     retries: 3
 ```
 
----
-
-## Scoped for Later
-
-| Feature | Reason deferred |
-|---|---|
-| OCR for scanned PDFs | Heavy dependency (Tesseract), not required for capstone |
-| Password-protected PDF unlocking | Niche use case, security complexity |
-| Multi-tenant document isolation | Requires authentication, session management, future version |
-| Authentication and access control | Future version |
-| Streaming LLM responses | **Done (D-10)**, `custom` mode streams over chunked HTTP (`POST /query/stream`, no WebSocket). A future version may add SSE + `llama_index`/`compare` streaming. |
-| Multi-turn conversation history | Future version (where `prompt`-level caching, D-12, pays off) |
-| Document versioning and update history | Future version |
-| Concurrent write safety at scale | Embedded ChromaDB limitation, a future version swaps to managed DB |
-| Language detection and multilingual support | Embedding model is primarily English, future version |
-| Grafana / external observability | Future version |
-| AWS deployment | Future version |
-| S3 persistence of original uploaded files | The current version discards original bytes after parsing, a future version stores originals in S3 for recovery |
-| Vector store backend abstraction layer | The current version couples directly to ChromaDB, a future version introduces abstract interface supporting ChromaDB and Pinecone via env var |
-| Data lifecycle policy (TTL, auto-expiry) | The current version is user-managed deletion only, a future version adds S3 lifecycle policies |
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -738,6 +783,7 @@ grounding behaviour that the current version establishes.
 - **Multilingual support.** The current embedding model is primarily English. Because the embedding
   model is already a configuration knob (subject to the re-index rule), a future version can swap in
   a multilingual model to raise quality on non-English documents.
+- **OCR and protected PDFs.** Scanned or image-only PDFs (no text layer) and password-protected PDFs are rejected today; both were deferred as heavy or niche dependencies not needed for the capstone. A future version can add OCR (for example Tesseract) and password-unlock support.
 
 ### Product features
 - **Multi-turn conversation.** The current version is single-turn. A future version adds conversation history
@@ -745,6 +791,7 @@ grounding behaviour that the current version establishes.
 - **Authentication and multi-tenant isolation.** The current version assumes a single trusted user. A future
   version adds authentication (starting with API-key middleware, with room for SSO / federated
   login) and per-user document isolation, so one deployment can serve multiple users safely.
+- **Document versioning and history.** The current version treats each upload independently with user-managed deletion. A future version adds document versioning and update history alongside the S3 lifecycle policies above.
 - **Concurrent-write safety at scale.** Embedded ChromaDB has a single-writer limitation. The managed
   vector backend above removes it, allowing safe concurrent ingestion.
 
@@ -753,14 +800,3 @@ grounding behaviour that the current version establishes.
   calls per query by replacing the Validator's LLM call with a deterministic grounding check on the
   normal path, reserving the LLM Validator for higher-stakes queries. This lowers cost and latency
   without weakening the grounding guarantees.
-
----
-
-## Timeline
-
-| Day | Goal |
-|---|---|
-| Thursday (today) | Design and requirements finalized (this document) |
-| Friday | Project structure, Docker setup, ingestion pipeline |
-| Saturday | Agent pipeline, API routes, Streamlit UI |
-| Sunday EOD | Testing, README, final documentation, submission |
