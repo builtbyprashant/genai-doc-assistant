@@ -487,11 +487,14 @@ def test_pipeline_stream_empty_store_short_circuits(monkeypatch, tmp_path):
 def test_llama_stream_forces_final_at_max_steps_and_streams_tokens(monkeypatch):
     # Model never FINALs and every search surfaces new chunks (guard never trips), so the loop
     # reaches max steps and forces a synthesis — streamed via stream_text (Case 1).
-    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "SEARCH: keep looking")
-
+    # In stream mode every turn streams: decision turns return SEARCH (and _FreshStore surfaces
+    # new chunks so the guard never trips), only the FORCE_FINAL synthesis returns FINAL.
     def fake_stream(system, user, **kw):
-        for piece in ["FINAL: Synthesized ", "from the ", "context.\nCONF", "IDENCE: LOW"]:
-            yield piece
+        if user.startswith("You have used all"):                  # forced synthesis turn
+            for piece in ["FINAL: Synthesized ", "from the ", "context.\nCONF", "IDENCE: LOW"]:
+                yield piece
+        else:                                                      # decision turn → keep searching
+            yield "SEARCH: keep looking"
     monkeypatch.setattr(llm, "stream_text", fake_stream)
 
     tokens, result = [], None
@@ -515,11 +518,14 @@ def test_llama_stream_forces_final_at_max_steps_and_streams_tokens(monkeypatch):
 def test_pipeline_stream_llama_index_streams_diminishing_returns_final(monkeypatch, indexed_store):
     # First decision turn says SEARCH; the re-search surfaces only already-seen chunks, so the
     # diminishing-returns guard forces a synthesis — streamed in llama_index mode (Case 1).
-    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "SEARCH: more on transfer")
-
+    # Decision turn streams SEARCH; the re-search surfaces only already-seen chunks, so the
+    # diminishing-returns guard forces the synthesis (FORCE_FINAL turn), which streams.
     def fake_stream(system, user, **kw):
-        for piece in ["FINAL: Patients ", "transfer after ", "four hours.\nCONFIDENCE: HIGH"]:
-            yield piece
+        if user.startswith("You have used all"):                  # forced synthesis turn
+            for piece in ["FINAL: Patients ", "transfer after ", "four hours.\nCONFIDENCE: HIGH"]:
+                yield piece
+        else:                                                      # decision turn → search
+            yield "SEARCH: more on transfer"
     monkeypatch.setattr(llm, "stream_text", fake_stream)
 
     tokens, done = [], None
@@ -538,6 +544,86 @@ def test_pipeline_stream_llama_index_streams_diminishing_returns_final(monkeypat
     assert done["confidence"] == "high"
     assert answer.strip() == done["answer"].strip()
     assert "validation" in done and "tokens" in done and "cost_usd" in done
+
+
+def test_llama_stream_model_chosen_final_streams_on_decision_turn(monkeypatch):
+    # The model FINALs on the first decision turn (not a forced/diminishing final); decide()
+    # must still stream the answer body (Case 2).
+    def fake_stream(system, user, **kw):
+        for piece in ["FINAL: Direct ", "answer ", "here.\nCONFIDENCE: HIGH"]:
+            yield piece
+    monkeypatch.setattr(llm, "stream_text", fake_stream)
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "FINAL: unused")
+
+    tokens, result = [], None
+    gen = llama_agent.run_llama_agent_stream("question", _FreshStore())
+    try:
+        while True:
+            kind, payload = next(gen)
+            if kind == "token":
+                tokens.append(payload)
+    except StopIteration as finished:
+        result = finished.value
+
+    streamed = "".join(tokens)
+    assert streamed.strip() == "Direct answer here."
+    assert all(tag not in streamed for tag in ("FINAL:", "CONFIDENCE", "SEARCH"))
+    assert result["answer"] == "Direct answer here."
+    assert result["confidence"] == "high"
+    assert result["llm_calls"] == 1  # answered on the first decision turn
+
+
+def test_llama_stream_suppresses_search_then_streams_final(monkeypatch):
+    # First decision streams SEARCH (must emit nothing), second streams FINAL (must emit).
+    replies = iter([["SEARCH: ", "look deeper"], ["FINAL: Found ", "it.\nCONFIDENCE: MEDIUM"]])
+    def fake_stream(system, user, **kw):
+        yield from next(replies)
+    monkeypatch.setattr(llm, "stream_text", fake_stream)
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "FINAL: unused")
+
+    tokens, result = [], None
+    gen = llama_agent.run_llama_agent_stream("question", _FreshStore())
+    try:
+        while True:
+            kind, payload = next(gen)
+            if kind == "token":
+                tokens.append(payload)
+    except StopIteration as finished:
+        result = finished.value
+
+    streamed = "".join(tokens)
+    assert "look deeper" not in streamed       # the SEARCH turn streamed nothing
+    assert streamed.strip() == "Found it."     # only the FINAL body reached the user
+    assert result["answer"] == "Found it."
+    assert result["llm_calls"] == 2            # one search turn + one final turn
+
+
+def test_llama_stream_decision_retries_before_first_token(monkeypatch):
+    # The decision stream fails once before emitting anything (safe to restart), then succeeds.
+    calls = {"n": 0}
+    def flaky_stream(system, user, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("connection dropped")
+        for piece in ["FINAL: Recovered ", "answer.\nCONFIDENCE: LOW"]:
+            yield piece
+    monkeypatch.setattr(llm, "stream_text", flaky_stream)
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "FINAL: unused")
+
+    tokens, result = [], None
+    gen = llama_agent.run_llama_agent_stream("question", _FreshStore())
+    try:
+        while True:
+            kind, payload = next(gen)
+            if kind == "token":
+                tokens.append(payload)
+    except StopIteration as finished:
+        result = finished.value
+
+    assert calls["n"] == 2  # failed once, retried once
+    assert "".join(tokens).strip() == "Recovered answer."
+    assert result["answer"] == "Recovered answer."
+    assert result["llm_calls"] == 1  # the retry is transparent — still one decision turn
 
 
 def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_store):

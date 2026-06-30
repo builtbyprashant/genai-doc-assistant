@@ -44,6 +44,12 @@ MAX_STEPS = 4
 # (A constant alongside MAX_STEPS; adjust to make the loop more/less eager to keep searching.)
 OVERLAP_STOP_RATIO = 0.7
 
+# Streaming turns have no transparent retry like `llm.complete`. A stream that fails *before*
+# the first visible token can still be restarted safely (nothing was sent), so allow one such
+# restart — matching complete()'s single automatic retry. Once a token has shipped, a failure
+# propagates (a stream can't be re-driven mid-flight). (Case 2)
+_STREAM_ATTEMPTS = 2
+
 
 def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usage=None) -> dict:
     """Batch entry point: run the loop without streaming — every turn uses the retryable
@@ -98,26 +104,51 @@ def _run(question, store, filter_filenames, top_k, usage, stream):
         return llm.complete(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
                             usage=usage, cache_context=cache_block())
 
+    def _stream_reply(instruction, *, always_flush):
+        """Stream one turn via `llm.stream_text`, emitting answer-body tokens through the shared
+        extractor (silent until `FINAL:`, bounded at `CONFIDENCE:`); return the full raw reply.
+        `always_flush` releases the tail even without a `FINAL:` marker — used for a forced
+        synthesis we already know is the answer; left False for a decision turn so a `SEARCH:`
+        reply stays fully suppressed. A failure before the first visible token is restarted once
+        (`_STREAM_ATTEMPTS`); a failure after a token has shipped propagates."""
+        for attempt in range(_STREAM_ATTEMPTS):
+            extractor = llm._AnswerExtractor(start="FINAL:", stop="CONFIDENCE:")
+            raw, emitted = "", False
+            try:
+                for delta in llm.stream_text(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
+                                             usage=usage, cache_context=cache_block()):
+                    raw += delta
+                    out = extractor.feed(raw)
+                    if out:
+                        emitted = True
+                        yield ("token", out)
+            except Exception:
+                if emitted or attempt == _STREAM_ATTEMPTS - 1:
+                    raise
+                continue  # nothing visible was sent — safe to restart the turn
+            if always_flush or "FINAL:" in raw:
+                tail = extractor.flush(raw)
+                if tail:
+                    yield ("token", tail)
+            return raw
+
     def final_now():
-        """Known-final synthesis. Streaming: emit the answer body token-by-token via
-        `llm.stream_text`, reusing the shared extractor — start `FINAL:` hides the loop
-        scaffolding, stop `CONFIDENCE:` bounds the tail. Batch: the retryable `llm.complete`.
-        Returns (answer, confidence) either way. (Always a generator because of the `yield`
-        in the streaming branch; the batch branch simply returns without yielding.)"""
+        """Known-final synthesis (forced at max steps, or diminishing returns). Streaming:
+        stream the answer body (Case 1). Batch: the retryable `llm.complete`. Returns
+        (answer, confidence)."""
         if not stream:
             return _extract_final(ask(FORCE_FINAL))
-        extractor = llm._AnswerExtractor(start="FINAL:", stop="CONFIDENCE:")
-        raw = ""
-        for delta in llm.stream_text(LLAMA_SYSTEM, FORCE_FINAL, agent="LlamaReAct",
-                                     usage=usage, cache_context=cache_block()):
-            raw += delta
-            emit = extractor.feed(raw)
-            if emit:
-                yield ("token", emit)
-        tail = extractor.flush(raw)
-        if tail:
-            yield ("token", tail)
+        raw = yield from _stream_reply(FORCE_FINAL, always_flush=True)
         return _extract_final(raw)
+
+    def decide(instruction):
+        """A decision turn — the model picks `SEARCH:` or `FINAL:`. Streaming: stream the turn
+        but stay silent until it commits to `FINAL:` (a `SEARCH:` reply emits nothing), then
+        stream the answer body (Case 2). Batch: the retryable `llm.complete`. Returns the full
+        raw reply for the loop to parse."""
+        if not stream:
+            return ask(instruction)
+        return (yield from _stream_reply(instruction, always_flush=False))
 
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 
@@ -133,11 +164,12 @@ def _run(question, store, filter_filenames, top_k, usage, stream):
             trace.append(_step(step, "final", _ms(t), reason="max_steps"))
             break
 
-        raw = ask(NEXT_ACTION)
+        raw = yield from decide(NEXT_ACTION)
         step_ms = _ms(t)
         llm_calls += 1
 
         if "FINAL:" in raw:
+            # Model-chosen final on a decision turn — streamed by decide() (Case 2).
             answer, confidence = _extract_final(raw)
             trace.append(_step(step, "final", step_ms))
             break
