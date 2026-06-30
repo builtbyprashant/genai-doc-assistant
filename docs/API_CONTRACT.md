@@ -1,10 +1,33 @@
 # Agentic RAG Knowledge System: API Contract
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Base URL](#base-url)
+- [Global Conventions](#global-conventions)
+- [Error Response Format (RFC 7807 Problem Details)](#error-response-format-rfc-7807-problem-details)
+- [Endpoints](#endpoints)
+  - [GET /health](#get-health)
+  - [POST /documents/upload](#post-documentsupload)
+  - [GET /documents](#get-documents)
+  - [DELETE /documents/{filename}](#delete-documentsfilename)
+  - [POST /query](#post-query)
+  - [POST /query/stream](#post-querystream)
+  - [GET /](#get-)
+- [Endpoint Summary](#endpoint-summary)
+- [HTTP Status Code Usage](#http-status-code-usage)
+- [Streamlit UI: API Usage Map](#streamlit-ui-api-usage-map)
+- [Future Version Changes (Forward Reference)](#future-version-changes-forward-reference)
+
+---
+
 ## Overview
 
 This document defines the complete REST API contract for the backend (FastAPI).
 It is the authoritative reference for both backend implementation and frontend (Streamlit) integration.
 Every endpoint, request shape, response shape, status code, and error format is defined here.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -16,6 +39,8 @@ Every endpoint, request shape, response shape, status code, and error format is 
 | Inside Docker network | `http://backend:8000` |
 | Swagger UI | `http://localhost:8000/docs` |
 | ReDoc | `http://localhost:8000/redoc` |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -56,6 +81,8 @@ All boolean fields use JSON `true` / `false`. Never `"true"` / `"false"` as stri
 ### Pagination
 There is currently no pagination. All list endpoints return complete results.
 Document this as a known limitation, a future version adds cursor-based pagination on `/documents`.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -104,6 +131,8 @@ All error responses follow RFC 7807. Every non-2xx response uses this shape:
 | `https://rag-api/errors/llm-timeout` | 503 | LLM call exceeded LLM_TIMEOUT_SECONDS |
 | `https://rag-api/errors/internal-error` | 500 | Unexpected server error |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Endpoints
@@ -144,6 +173,8 @@ Returns system health and current operational stats. Used by Docker Compose heal
 | `stats.similarity_threshold` | float | Active SIMILARITY_THRESHOLD value. |
 
 **Error responses:** None expected. Returns 200 even if stats are partially unavailable, degrade gracefully.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -247,6 +278,8 @@ curl -X POST http://localhost:8000/documents/upload \
 | 400 | `validation-error` | No files included in the request |
 | 500 | `internal-error` | Unexpected server-side failure |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ### GET /documents
@@ -304,6 +337,8 @@ Used by the Streamlit UI to populate the document filter multiselect.
 }
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ### DELETE /documents/{filename}
@@ -341,6 +376,8 @@ curl -X DELETE "http://localhost:8000/documents/my%20report.pdf"  # URL-encoded
 |---|---|---|
 | 404 | `document-not-found` | Filename does not exist in the index |
 | 500 | `internal-error` | ChromaDB deletion failed |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -713,6 +750,8 @@ following the same rules as the single-pipeline response.
 }
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ### POST /query/stream
@@ -739,6 +778,8 @@ UI in ~2–4 s instead of after the whole answer is generated. Implemented (D-10
 > **Future version note:** A future version may switch the wire format to Server-Sent Events (SSE) and add
 > llama-mode streaming; the batch `POST /query` remains available either way.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ### GET /
@@ -757,6 +798,8 @@ Root endpoint. Returns application identity. Used to confirm the API is reachabl
 }
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Endpoint Summary
@@ -770,6 +813,8 @@ Root endpoint. Returns application identity. Used to confirm the API is reachabl
 | `DELETE` | `/documents/{filename}` | Remove a document | None |
 | `POST` | `/query` | Submit a question, run pipeline (batch JSON) | None |
 | `POST` | `/query/stream` | Submit a question, stream the answer (custom mode) + metadata frame | None |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -788,6 +833,8 @@ Root endpoint. Returns application identity. Used to confirm the API is reachabl
 | 500 | Internal server error. Unexpected failure. |
 | 503 | Service unavailable. Anthropic API unreachable or timed out. |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Streamlit UI: API Usage Map
@@ -803,6 +850,8 @@ How the Streamlit frontend uses each endpoint:
 | User submits a question (`custom` mode) | `POST /query/stream`, answer rendered live via `st.write_stream`, then metadata frame for confidence/sources/trace |
 | User submits a question (`llama_index` / `compare`) | `POST /query` with `include_chunks=true`, `include_trace=true` |
 | Any API error | Streamlit catches non-200, displays human-readable message. Raw error shown in expandable trace section only. |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
