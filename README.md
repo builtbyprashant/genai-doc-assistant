@@ -33,6 +33,44 @@ Built for engineers who want to understand what is happening inside their RAG pi
 
 ---
 
+## Demo
+
+A walkthrough on three Wikipedia articles (Artificial Intelligence, Machine Learning, AGI) indexed as the knowledge base.
+
+**1. Single-page UI.** Upload documents, ask questions, and inspect the pipeline, all on one screen.
+
+![Landing page](assets/1.Landing_Page.png)
+
+**2. Upload documents.** Eight formats are supported (PDF, TXT, MD, CSV, XLSX, JSON, YAML, DOCX), validated on raw bytes before parsing.
+
+![Document upload](assets/2.Document_Upload.png)
+
+**3. Indexed and ready.** Documents are indexed with per-file chunk counts; pick the answer mode (`custom` / `llama_index` / `compare`).
+
+![After indexing](assets/3.After_Indexing.png)
+
+**4. `custom` mode.** The deterministic 7-step pipeline returns a grounded, cited answer (streamed token by token).
+
+![Custom mode answer](assets/4.Custom_RAG.png)
+
+**5. `llama_index` mode.** The agentic ReAct loop (`llama_agent`) answers the same question, deciding its own searches.
+
+![llama_index mode answer](assets/5.llamaIndexMode_Rag.png)
+
+**6. `compare` mode.** Both pipelines run side by side, with confidence, LLM-call count, latency, tokens, and estimated cost per side.
+
+![Compare mode](assets/6.Compare_Mode.png)
+
+**7. Pipeline trace.** Every step is visible: SafetyGuard, Planner, Retriever, SimilarityThreshold, ReRanker, Reasoner, Validator.
+
+![Pipeline trace](assets/7.Pipeline_Trace.png)
+
+**8. Retrieved chunks, side by side.** See exactly which passages each pipeline used to ground its answer.
+
+![Retrieved chunks comparison](assets/8.RetrievedChunks_Comparison.png)
+
+---
+
 ## Architecture
 
 Two architecturally distinct pipelines run behind the same FastAPI backend and share one retrieval stack (ChromaDB vectors plus the cross-encoder reranker). `compare` mode runs both on a single query.
@@ -489,6 +527,7 @@ This project stands on excellent open tools and services:
 - **[ChromaDB](https://www.trychroma.com/)**: the persistent vector store (cosine similarity).
 - **[FastAPI](https://fastapi.tiangolo.com/) and [Streamlit](https://streamlit.io/)**: the backend API and the UI.
 - **[Docker](https://www.docker.com/) and [GitHub Actions](https://github.com/features/actions)**: containerized deployment and CI (lint, tests, image build).
+- **[Wikipedia](https://www.wikipedia.org/)**: the demo and the sample documents (`assets/sample-docs/`: Artificial Intelligence, Machine Learning, AGI) are exported from Wikipedia under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Freely shareable knowledge, gratefully used.
 
 ---
 
