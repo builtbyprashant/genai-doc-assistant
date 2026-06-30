@@ -1,4 +1,4 @@
-# Agentic RAG Knowledge System: UI Specification (Phase 1)
+# Agentic RAG Knowledge System: UI Specification
 
 ## Overview
 
@@ -391,16 +391,16 @@ Streamlit `layout="wide"` fills the browser window. The column ratio `[2, 1]` me
 
 On narrow screens (laptop at 1280px), the sidebar auto-collapses to give maximum space
 to the main content. Users on narrow screens should collapse the sidebar for best experience.
-No mobile optimisation in Phase 1, document as a known limitation.
+No mobile optimisation currently, document as a known limitation.
 
 ---
 
-## UI Limitations (Phase 1)
+## UI Limitations
 
 | Limitation | Notes |
 |---|---|
-| Streaming is custom-mode only | Custom mode streams the answer live (first words ~2–4s). llama_index and Compare still appear all at once after full generation, with the spinner shown during the wait. Full llama/compare streaming is Phase 2. |
-| No conversation history | Each question is independent. No chat history displayed. Phase 2. |
+| Streaming is custom-mode only | Custom mode streams the answer live (first words ~2–4s). llama_index and Compare still appear all at once after full generation, with the spinner shown during the wait. Full llama/compare streaming is planned for a future version. |
+| No conversation history | Each question is independent. No chat history displayed. Planned for a future version. |
 | No mobile optimisation | Designed for desktop browser at ≥ 1280px width. |
 | No dark mode toggle | Follows system/browser preference via Streamlit default. |
 | Sidebar collapse on mobile | Streamlit auto-collapses sidebar on narrow viewports. |

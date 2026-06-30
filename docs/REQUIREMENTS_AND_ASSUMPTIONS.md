@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document records every explicit design decision, functional assumption, acceptable behaviour, and known limitation for Phase 1. It exists to make implicit choices visible, provide rationale for reviewers and evaluators, and serve as the authoritative reference during build.
+This document records every explicit design decision, functional assumption, acceptable behaviour, and known limitation for the current version. It exists to make implicit choices visible, provide rationale for reviewers and evaluators, and serve as the authoritative reference during build.
 
 Every decision here was made consciously. Where multiple options existed, the chosen option and the reason for choosing it are both documented.
 
@@ -76,9 +76,9 @@ If the same filename is uploaded with different content (different hash), treat 
 
 ### 1.5 API Versioning
 
-**Decision:** Flat routes for Phase 1 (`/query`, `/documents/upload`, etc.). No `/api/v1/` prefix.
+**Decision:** Flat routes for now (`/query`, `/documents/upload`, etc.). No `/api/v1/` prefix.
 
-**Rationale:** Phase 1 is a single-version system. Adding versioning prefixes now adds complexity with no benefit. Phase 2 introduces versioning when breaking changes become a real concern. Document the current routes clearly so Phase 2 knows exactly what to version.
+**Rationale:** This is currently a single-version system. Adding versioning prefixes now adds complexity with no benefit. A future version introduces versioning when breaking changes become a real concern. Document the current routes clearly so a future version knows exactly what to version.
 
 ---
 
@@ -86,11 +86,11 @@ If the same filename is uploaded with different content (different hash), treat 
 
 **Decision:** No session isolation. All browser tabs share the same document pool.
 
-**Rationale:** There is no authentication in Phase 1. ChromaDB is a single shared instance. Multiple tabs opening the same `localhost:8501` each get their own Streamlit UI state (selected filters, typed questions) but share the same backend document index.
+**Rationale:** There is no authentication currently. ChromaDB is a single shared instance. Multiple tabs opening the same `localhost:8501` each get their own Streamlit UI state (selected filters, typed questions) but share the same backend document index.
 
-**Acceptable behaviour:** Tab A uploading a document makes it immediately visible to Tab B. Tab A deleting a document affects Tab B. This is documented as a known single-tenant characteristic, not a bug. Multi-tenant isolation is a Phase 2 concern.
+**Acceptable behaviour:** Tab A uploading a document makes it immediately visible to Tab B. Tab A deleting a document affects Tab B. This is documented as a known single-tenant characteristic, not a bug. Multi-tenant isolation is a future-version concern.
 
-**Concurrency risk:** Embedded ChromaDB is not designed for concurrent writes. Simultaneous uploads from multiple tabs can corrupt the index. Mitigation: a file-based write lock during indexing causes a second upload to wait rather than corrupt. Document as a known limitation, sequential uploads are assumed for Phase 1.
+**Concurrency risk:** Embedded ChromaDB is not designed for concurrent writes. Simultaneous uploads from multiple tabs can corrupt the index. Mitigation: a file-based write lock during indexing causes a second upload to wait rather than corrupt. Document as a known limitation, sequential uploads are assumed for the current version.
 
 ---
 
@@ -131,7 +131,7 @@ If the same filename is uploaded with different content (different hash), treat 
 
 | Edge case | Acceptable behaviour |
 |---|---|
-| Scanned PDF (no text layer) | Reject. Error: "This PDF appears to be scanned or image-based. Text could not be extracted. Please use a PDF with a text layer or convert it using OCR first." OCR is out of scope for Phase 1. |
+| Scanned PDF (no text layer) | Reject. Error: "This PDF appears to be scanned or image-based. Text could not be extracted. Please use a PDF with a text layer or convert it using OCR first." OCR is out of scope for the current version. |
 | Password protected PDF | Reject. Error: "This PDF is password protected and cannot be read. Please remove the password protection before uploading." |
 | MIME type mismatch (e.g. .pdf that is not a PDF) | Reject. Validate actual MIME type using `python-magic`, not just extension. Error: "File content does not match the declared file type." |
 | CSV with no headers | Auto-generate column names (Col_1, Col_2...) and proceed. Include warning in upload response: "No column headers detected. Generic column names were assigned." |
@@ -172,7 +172,7 @@ If the same filename is uploaded with different content (different hash), treat 
 | Planner returns malformed JSON | Fall back to a safe default plan: `{ "intent": "answer user question", "retrieval_strategy": "semantic", "top_k": TOP_K_RETRIEVAL, "rewritten_query": [original query] }`. Log raw LLM output at WARNING level. Pipeline continues. |
 | Validator returns malformed JSON | Fall back to: `{ "is_valid": true, "issues": [], "hallucination_risk": "unknown", "suggested_action": "none" }`. Log raw LLM output at WARNING level. Pipeline continues. |
 | Anthropic API unavailable or rate limited | Return HTTP 503 with structured body: `{ "success": false, "error": "LLM service unavailable", "failed_at_agent": "[agent name]", "retry_after": 30 }`. Streamlit UI catches all non-200 responses and displays a human-readable message without crashing. Raw errors never shown to the user. |
-| Anthropic API timeout | Each LLM call uses LLM_TIMEOUT_SECONDS (default 20s) for first attempt. One automatic retry at half timeout (10s). Total max wait per LLM call: 30s. After exhausted retries, return structured 503 response. Blanket retry, no error type classification in Phase 1. |
+| Anthropic API timeout | Each LLM call uses LLM_TIMEOUT_SECONDS (default 20s) for first attempt. One automatic retry at half timeout (10s). Total max wait per LLM call: 30s. After exhausted retries, return structured 503 response. Blanket retry, no error type classification currently. |
 | Reasoner generates very long answer | max_tokens set on Reasoner call (default 800 tokens). Answers are bounded. Document as a known constraint, very long documents may warrant a higher limit via env var. |
 | All reranked chunks have identical scores | Preserve original retrieval order (by cosine similarity) as tiebreaker. Deterministic, no user impact. |
 | Encoder mode: cross-encoder model unavailable | Will not occur in normal operation, model is pre-downloaded during Docker image build. If image was built without internet, build fails explicitly, not a runtime failure. |
@@ -210,7 +210,7 @@ If the same filename is uploaded with different content (different hash), treat 
 | Backend container crashes | Docker Compose `restart: always` policy restarts it automatically. ChromaDB index persists via volume mount, no data loss. |
 | Frontend container crashes | Docker Compose `restart: always` restarts it. No state loss, Streamlit is stateless server-side. |
 | ChromaDB volume deleted manually | All indexed documents are lost. Uploaded files (if any were saved locally) are unaffected. User must re-upload documents. Documented as an operational risk, treat the volume as the primary data store. |
-| Original file bytes after upload | Original file bytes are discarded after parsing and chunking. Only chunks are stored in ChromaDB. If the volume is lost, documents must be re-uploaded, they cannot be recovered from the system. This is a known Phase 1 limitation. |
+| Original file bytes after upload | Original file bytes are discarded after parsing and chunking. Only chunks are stored in ChromaDB. If the volume is lost, documents must be re-uploaded, they cannot be recovered from the system. This is a known current-version limitation. |
 | Log volume growth | Docker log rotation configured in docker-compose.yml: `max-size: 10m, max-file: 3`. Prevents unbounded log growth on long-running instances. |
 | Query PII in logs | Raw user queries are never logged. Every log line records `query_hash` (SHA-256 first 8 hex chars) and `query_length` instead. Hash is deterministic, same query always produces same hash for correlation. Cannot be reversed to recover original query. |
 | `.env` file on GitHub | `.env` is listed in `.gitignore`. Only `.env.example` (non-secret defaults, no key) is committed. The API key is never in `.env`, it comes from the host shell/OS env (D-11). Enforced by project convention, documented in README. |
@@ -280,7 +280,7 @@ Row text: "Name: John Smith | Age: 45 | Diagnosis: Hypertension | Admitted: 2024
 
 **Known limitation:** The 200-word chunker may group multiple rows into one chunk or split a row across chunks if row text is long. This is acceptable for small CSVs with short values. For large CSVs or rows with many columns, retrieval quality degrades.
 
-**Production-correct approach (Phase 2):** Row-aware chunking, group N complete rows per chunk where N keeps the chunk under the token limit. Never split mid-row. This requires a separate chunking strategy for tabular data.
+**Production-correct approach (future version):** Row-aware chunking, group N complete rows per chunk where N keeps the chunk under the token limit. Never split mid-row. This requires a separate chunking strategy for tabular data.
 
 **Documented assumption:** CSV and Excel documents with more than ~50 columns or very long cell values may produce lower quality retrieval results. Users should be aware of this limitation when uploading tabular data.
 
@@ -296,24 +296,24 @@ Rule of thumb: 1 token ≈ 0.75 words for common English. Technical documents, m
 
 ---
 
-## 6. Out of Scope for Phase 1
+## 6. Scoped for Later
 
-The following were considered and explicitly deferred to Phase 2 or later:
+The following were considered and explicitly deferred to a future version:
 
 | Feature | Reason deferred |
 |---|---|
 | OCR for scanned PDFs | Heavy dependency (Tesseract), significant complexity, not required for capstone |
 | Password-protected PDF unlocking | Niche use case, security complexity |
-| Multi-tenant document isolation | Requires authentication, session management, Phase 2 |
-| Authentication and access control | Phase 2 |
-| Streaming LLM responses | **Done in Phase 1 (D-10)**, `custom` mode streams the answer over chunked HTTP via `POST /query/stream` (no WebSocket). Phase 2 may add SSE + `llama_index`/`compare` streaming. |
-| Multi-turn conversation history | Phase 2 (where `prompt`-level caching, D-12, pays off) |
-| Document versioning and update history | Phase 2 |
-| Concurrent write safety at scale | Embedded ChromaDB limitation, Phase 2 swaps to managed DB |
-| Language detection and multilingual support | Embedding model is primarily English, Phase 2 |
-| Document update without full re-upload | Requires chunk-level diffing, Phase 2 |
-| Grafana / external observability | Phase 2 |
-| AWS deployment | Phase 2 |
+| Multi-tenant document isolation | Requires authentication, session management, future version |
+| Authentication and access control | Future version |
+| Streaming LLM responses | **Done (D-10)**, `custom` mode streams the answer over chunked HTTP via `POST /query/stream` (no WebSocket). A future version may add SSE + `llama_index`/`compare` streaming. |
+| Multi-turn conversation history | Future version (where `prompt`-level caching, D-12, pays off) |
+| Document versioning and update history | Future version |
+| Concurrent write safety at scale | Embedded ChromaDB limitation, a future version swaps to managed DB |
+| Language detection and multilingual support | Embedding model is primarily English, future version |
+| Document update without full re-upload | Requires chunk-level diffing, future version |
+| Grafana / external observability | Future version |
+| AWS deployment | Future version |
 
 ---
 

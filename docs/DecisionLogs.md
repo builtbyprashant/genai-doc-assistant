@@ -1,8 +1,4 @@
-# Agentic RAG Knowledge System: Phase 1 Decision Log
-
-> A record of the consequential design decisions made while building Phase 1, each with its
-> rationale and what shipped. This is the public, Phase 1 subset of the project's internal decision
-> log; forward-looking and unpublished design work is kept out of this file.
+# Agentic RAG Knowledge System: Decision Log
 
 Design-first development was a core principle: the architecture, API contract, requirements, and
 edge cases were documented and reviewed before any code was written, and every consequential change
@@ -31,7 +27,7 @@ design decision, `P-x` for a process/workflow decision.
 | D-4 | Docker is the primary path; a Windows venv is secondary |
 | D-5 | Validator independence enforced by its input contract |
 | D-6 | Extensibility seams baked in at near-zero cost |
-| D-7 | The LlamaIndex library is not used in Phase 1; `llama_index` mode is a from-scratch ReAct loop |
+| D-7 | The LlamaIndex library is not used; `llama_index` mode is a from-scratch ReAct loop |
 | D-8 | Docker image optimization: CPU-only torch + split requirements |
 | D-9 | Default model switched to Haiku for latency (still configurable) |
 | D-10 | Streamed answer for custom mode (`POST /query/stream`) |
@@ -104,7 +100,7 @@ per-format edge cases and for deterministic tests.
 **D-3. Added env vars.** `MAX_DOCUMENTS=20` (enforced at upload), `MIN_CHUNK_CHARS=20` (smaller
 chunks discarded), `EMBEDDING_MODEL=all-MiniLM-L6-v2` (bi-encoder, config-driven, must be 384-dim or
 the index is rebuilt), `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` (outputs a score not a
-vector, so it is drop-in swappable), and `GROUNDING_THRESHOLD=0.6` (present but unused in Phase 1).
+vector, so it is drop-in swappable), and `GROUNDING_THRESHOLD=0.6` (present but unused for now).
 
 **D-4. Docker primary, Windows venv secondary.** `requirements.txt` pins `python-magic` for
 Linux/Docker; Windows venv users install `python-magic-bin` instead (documented in `setup_venv.sh`).
@@ -115,17 +111,17 @@ question, the final answer text, and the top retrieved chunks. It never receives
 reasoning, the Planner output, or any other pipeline state, so its hallucination check is genuinely
 independent.
 
-**D-6. Extensibility seams baked in.** Added at near-zero cost without changing Phase 1 behaviour:
+**D-6. Extensibility seams baked in.** Added at near-zero cost without changing current behaviour:
 the vector store is the only module that imports ChromaDB and is reached through a narrow interface;
 all file persistence goes through one `save_upload()` function; chunking dispatches by file
 extension behind a stable call site; and `agent_mode` is passed as a parameter rather than read
 directly inside the pipeline.
 
-**D-7. No LlamaIndex library in Phase 1.** The LlamaIndex library is not used anywhere in Phase 1 and
+**D-7. No LlamaIndex library.** The LlamaIndex library is not used anywhere and
 is absent from `requirements.txt`. The `llama_index` mode is a genuine ReAct reasoning loop built
 using python, interacting directly with the Anthropic API: it seeds context from the vector store, then loops up to four turns
 asking the model for exactly one action per turn (`SEARCH: <query>` to fetch more context, or
-`FINAL: <answer>` to finish), making 1 to 4 LLM calls depending on complexity. This keeps Phase 1
+`FINAL: <answer>` to finish), making 1 to 4 LLM calls depending on complexity. This keeps the system
 self-contained and the image small.
 
 **D-8. Docker image optimization.** The backend installs CPU-only torch from the PyTorch CPU index
@@ -142,7 +138,7 @@ configurable via `ANTHROPIC_MODEL`; set it to a larger model to trade latency fo
 then a single record-separator byte, then a JSON metadata frame (confidence, sources, validation,
 trace, timing). The structured scaffolding is hidden mid-stream and only the answer text is shown.
 Safety and filter checks run before any byte is sent, so errors still surface as clean responses.
-`llama_index` and `compare` remain batch in Phase 1.
+`llama_index` and `compare` remain batch for now.
 
 **D-11. Config is environment-specific.** `config.py` reads `os.environ`, so the app does not care
 where env vars come from, only that they are present. `.env` is a local-dev convenience, never a
@@ -200,8 +196,3 @@ build is path-gated: it runs only on a push to `main` that changed an image-affe
 image can only break when dependencies or Dockerfiles change. A scheduled job keeps the dependency
 and model-download caches warm so a low-activity repo does not go cold, and a build-layer cache keeps
 warm builds short.
-
----
-
-> This is the Phase 1 decision log. The project's full internal log, including forward-looking design
-> and unpublished research direction, is maintained separately.
