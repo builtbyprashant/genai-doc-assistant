@@ -312,7 +312,6 @@ This project was designed before any code was written. The core design documenta
 | [Requirements and Assumptions](docs/REQUIREMENTS_AND_ASSUMPTIONS.md) | 40+ edge cases with acceptable behaviours, design decisions |
 | [API Contract](docs/API_CONTRACT.md) | All endpoints, request/response shapes, error types |
 | [UI Specification](docs/UI_SPECIFICATION.md) | Every screen state, component behaviour, session state |
-| [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) | Build order, per-task file scope, test mapping, all mapped to decisions |
 | [Decision Log](docs/DecisionLogs.md) | Key design decisions, conflicts resolved, and rationale |
 
 > Design-first development was a core principle of this project: the architecture, API contracts, requirements, and edge cases were all documented and reviewed before any code was written. The decision log captures the key decisions and their rationale.
