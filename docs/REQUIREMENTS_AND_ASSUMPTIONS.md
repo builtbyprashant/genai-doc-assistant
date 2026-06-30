@@ -376,3 +376,5 @@ The following were considered and explicitly deferred to a future version:
 | Agent trace | A structured log of every agent's execution: what it received, what it decided, and its status. Returned in the API response when `include_trace=true`. |
 | Content hash | SHA-256 hash of raw file bytes (first 32 hex chars stored as `content_hash`). Used at upload time to detect duplicate content across different filenames. |
 | Replace | The document update operation: delete all existing chunks for a filename, then index the new version. |
+
+<!-- refinement -->
