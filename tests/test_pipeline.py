@@ -2,7 +2,7 @@
 
 LLM agents are tested with a mocked `llm.complete` so no real API calls happen.
 
-This file starts with the Reasoner (Task 7). Planner / Ranker / Validator /
+This file starts with the Reasoner (Task 7). Planner / ReRanker / Validator /
 SafetyGuard and the orchestrator are appended in Tasks 8-9. Covers DECISIONS
 C-A, C-E, C-F, C-H, D-5.
 """
@@ -101,7 +101,7 @@ def test_planner_falls_back_on_malformed_json(monkeypatch):
     assert plan["retrieval_strategy"] == "semantic"
 
 
-# ── RankerAgent (Task 8, cross-encoder — no LLM) ──────────────────────────────
+# ── ReRanker (Task 8, cross-encoder — no LLM) ──────────────────────────────
 
 def test_ranker_orders_by_answer_relevance():
     chunks = [
@@ -226,8 +226,8 @@ def test_pipeline_empty_store_short_circuits(monkeypatch, tmp_path):
     assert out["success"] is False
     assert out["short_circuit"] is True
     assert out["short_circuit_reason"] == "no_documents_indexed"
-    # Empty store is recorded as RetrieverAgent skipped, not a made-up step. (C-H)
-    skipped = [s for s in out["trace"] if s["agent"] == "RetrieverAgent"]
+    # Empty store is recorded as Retriever skipped, not a made-up step. (C-H)
+    skipped = [s for s in out["trace"] if s["agent"] == "Retriever"]
     assert skipped and skipped[0]["status"] == "skipped"
 
 
@@ -263,8 +263,8 @@ def test_pipeline_custom_happy_path(monkeypatch, indexed_store):
     assert out["validation"]["hallucination_risk"] == "low"
     # Canonical 7-step trace in order. (C-H)
     assert [s["agent"] for s in out["trace"]] == [
-        "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
-        "RankerAgent", "ReasonerAgent", "ValidatorAgent",
+        "SafetyGuard", "PlannerAgent", "Retriever", "SimilarityThreshold",
+        "ReRanker", "ReasonerAgent", "ValidatorAgent",
     ]
     assert out["chunks"] and "rerank_score" in out["chunks"][0]
 
@@ -464,8 +464,8 @@ def test_pipeline_custom_stream_emits_clean_answer_then_metadata(monkeypatch, in
     assert done["confidence"] == "high"
     assert answer.strip() == done["answer"].strip()
     assert [s["agent"] for s in done["trace"]] == [
-        "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
-        "RankerAgent", "ReasonerAgent", "ValidatorAgent",
+        "SafetyGuard", "PlannerAgent", "Retriever", "SimilarityThreshold",
+        "ReRanker", "ReasonerAgent", "ValidatorAgent",
     ]
 
 
@@ -508,8 +508,8 @@ def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_st
     assert captured["query_hash"] == app_logging.hash_query("When can ICU patients transfer?")
     assert "ICU" not in str(captured)  # raw query never logged, only the hash
     assert set(captured["steps_ms"]) == {
-        "SafetyGuard", "PlannerAgent", "RetrieverAgent", "SimilarityThreshold",
-        "RankerAgent", "ReasonerAgent", "ValidatorAgent",
+        "SafetyGuard", "PlannerAgent", "Retriever", "SimilarityThreshold",
+        "ReRanker", "ReasonerAgent", "ValidatorAgent",
     }
 
 

@@ -1,4 +1,4 @@
-"""RankerAgent — re-orders retrieved chunks by answer relevance.
+"""ReRanker — re-orders retrieved chunks by answer relevance.
 
 This is NOT an LLM agent. It uses a cross-encoder (`ms-marco-MiniLM-L-6-v2`) that
 reads the query and a chunk together and scores how well the chunk answers the

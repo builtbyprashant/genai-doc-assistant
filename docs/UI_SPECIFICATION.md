@@ -261,9 +261,9 @@ Pipeline detail
 
   ✓ SafetyGuard          2ms
   ✓ PlannerAgent       890ms
-  ✓ RetrieverAgent     120ms
+  ✓ Retriever     120ms
   ✓ SimilarityThreshold  1ms
-  ✓ RankerAgent       1340ms
+  ✓ ReRanker       1340ms
   ✓ ReasonerAgent     2100ms
   ✓ ValidatorAgent     787ms
 ```

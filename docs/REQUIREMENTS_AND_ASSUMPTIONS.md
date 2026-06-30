@@ -36,7 +36,7 @@ Every decision here was made consciously. Where multiple options existed, the ch
 
 **Decision: cross-encoder/ms-marco-MiniLM-L-6-v2, fixed, no feature flag**
 
-The RankerAgent always uses the cross-encoder model. The LLM reranker option was removed in favour of a simpler, faster, and cheaper design. Encoder reranking is more appropriate for production use, no API cost, no extra LLM latency, deterministic results.
+The ReRanker always uses the cross-encoder model. The LLM reranker option was removed in favour of a simpler, faster, and cheaper design. Encoder reranking is more appropriate for production use, no API cost, no extra LLM latency, deterministic results.
 
 **Model delivery:** The cross-encoder model (~80MB) is pre-downloaded into the Docker image during build. No internet dependency after the image is built. Image size is approximately 1.5GB (reduced from ~2GB by removing the dual-mode complexity).
 
@@ -186,7 +186,7 @@ If the same filename is uploaded with different content (different hash), treat 
 | Query length < 3 characters | Reject. Error: "Query is too short. Please ask a complete question." |
 | Query length > 2000 characters | Reject. Error: "Query exceeds the maximum length of 2000 characters." |
 | Prompt injection patterns detected | Reject. Error: "Query was flagged by the safety guardrail." Log the flagged pattern at WARNING level. |
-| Question submitted with no documents indexed | Short-circuit at the RetrieverAgent step (status `skipped`). Return HTTP 200 with `short_circuit: true`, `short_circuit_reason: "no_documents_indexed"`. Message: "No documents have been indexed yet." (Same as empty store check, not a 4xx error.) |
+| Question submitted with no documents indexed | Short-circuit at the Retriever step (status `skipped`). Return HTTP 200 with `short_circuit: true`, `short_circuit_reason: "no_documents_indexed"`. Message: "No documents have been indexed yet." (Same as empty store check, not a 4xx error.) |
 
 ---
 
@@ -230,7 +230,7 @@ All limits are configurable via environment variables unless marked as fixed.
 | Min chunk content length | 20 chars | `MIN_CHUNK_CHARS` | Chunks below this are discarded |
 | Chunk size | 200 words | `CHUNK_SIZE` | Chosen to stay within all-MiniLM-L6-v2's 256 token limit (~192 words for typical English prose) |
 | Chunk overlap | 25 words | `CHUNK_OVERLAP` | 12.5% of chunk size, preserves boundary context without excessive repetition |
-| Chunks fetched before re-ranking | 10 | `TOP_K_RETRIEVAL` | Candidates for the Ranker |
+| Chunks fetched before re-ranking | 10 | `TOP_K_RETRIEVAL` | Candidates for the ReRanker |
 | Chunks passed to Reasoner after re-ranking | 5 | `TOP_K_RERANK` | Must be ≤ TOP_K_RETRIEVAL |
 | Similarity threshold | 0.4 | `SIMILARITY_THRESHOLD` | Below this = short-circuit. Range in practice: 0.0–1.0 (underlying cosine math is -1 to +1 but text embeddings never produce negative values in normal use). Calibrated for general English prose with all-MiniLM-L6-v2. Domain-specific deployments should re-tune. |
 | LLM call timeout | 20 seconds (first attempt) | `LLM_TIMEOUT_SECONDS` | Retry at 10s (half). Total max 30s per LLM call. |

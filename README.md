@@ -45,7 +45,7 @@ Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend
                   ┌─────────────────────┴──────────────────────┐
                   │              7-step query pipeline           │
                   │  SafetyGuard → Planner → Retriever →         │
-                  │  SimilarityThreshold → Ranker → Reasoner →   │
+                  │  SimilarityThreshold → ReRanker → Reasoner → │
                   │  Validator                                   │
                   └──────────┬───────────────────────┬──────────┘
                              ▼                        ▼
@@ -89,9 +89,9 @@ The loop runs on a single system prompt with a cached context block that grows a
 |---|---|---|---|
 | SafetyGuard | Pipeline function | None | Prompt injection detection |
 | PlannerAgent | LLM Agent | claude-haiku-4-5 | Query intent + rewrite |
-| RetrieverAgent | Pipeline function | all-MiniLM-L6-v2 | Semantic search |
+| Retriever | Pipeline function | all-MiniLM-L6-v2 | Semantic search |
 | SimilarityThreshold | Pipeline function | None | Relevance gate |
-| RankerAgent | Pipeline function | ms-marco-MiniLM-L-6-v2 | Answer relevance scoring |
+| ReRanker | Pipeline function | ms-marco-MiniLM-L-6-v2 | Answer relevance scoring |
 | ReasonerAgent | LLM Agent | claude-haiku-4-5 | Grounded answer generation (streamed in `custom` mode) |
 | ValidatorAgent | LLM Agent | claude-haiku-4-5 | Hallucination check |
 
@@ -191,9 +191,9 @@ Answer generation runs in one of **two modes** (chosen per request via the `AGEN
 #### `custom` mode: deterministic 7-step pipeline (3 LLM calls)
 1. **SafetyGuard**, checks for prompt injection patterns (rule-based, no LLM call)
 2. **PlannerAgent**, analyses query intent, rewrites for semantic density (LLM call 1)
-3. **RetrieverAgent**, cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
+3. **Retriever**, cosine similarity search in ChromaDB, top-10 chunks (no LLM call)
 4. **SimilarityThreshold**, rejects if best match scores below 0.3 (cosine), short-circuits pipeline
-5. **RankerAgent**, cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
+5. **ReRanker**, cross-encoder reranks chunks by answer relevance, selects top-5 (no LLM call)
 6. **ReasonerAgent**, generates grounded answer using only retrieved context (LLM call 2); the answer is **streamed** to the UI token-by-token via `POST /query/stream`
 7. **ValidatorAgent**, independent hallucination risk check with fresh context (LLM call 3)
 

@@ -441,7 +441,7 @@ shows the first words in ~2–4s instead of waiting for the whole response, use
       "duration_ms": 890
     },
     {
-      "agent": "RetrieverAgent",
+      "agent": "Retriever",
       "status": "completed",
       "details": {
         "chunks_retrieved": 10,
@@ -461,7 +461,7 @@ shows the first words in ~2–4s instead of waiting for the whole response, use
       "duration_ms": 1
     },
     {
-      "agent": "RankerAgent",
+      "agent": "ReRanker",
       "status": "completed",
       "details": {
         "model": "ms-marco-MiniLM-L-6-v2",
@@ -527,7 +527,7 @@ shows the first words in ~2–4s instead of waiting for the whole response, use
 | `filename` | string | Source document filename. |
 | `chunk_index` | integer | Position of this chunk within its document. |
 | `similarity_score` | float | Cosine similarity score from initial retrieval (0.0–1.0). |
-| `rerank_score` | float | Score assigned by the Ranker agent (0.0–1.0). |
+| `rerank_score` | float | Score assigned by the ReRanker (0.0–1.0). |
 | `text` | string | The chunk text content. |
 
 **Trace array, present only when `include_trace: true`:**
@@ -635,7 +635,7 @@ following the same rules as the single-pipeline response.
       "duration_ms": 2
     },
     {
-      "agent": "RetrieverAgent",
+      "agent": "Retriever",
       "status": "skipped",
       "details": "no_documents_indexed",
       "duration_ms": 3
@@ -667,7 +667,7 @@ following the same rules as the single-pipeline response.
   "chunks": [],
   "trace": [
     {
-      "agent": "RetrieverAgent",
+      "agent": "Retriever",
       "status": "completed",
       "details": { "chunks_retrieved": 10, "top_similarity_score": 0.18, "threshold_passed": false },
       "duration_ms": 118

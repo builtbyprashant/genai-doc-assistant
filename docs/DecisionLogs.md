@@ -50,8 +50,8 @@ design decision, `P-x` for a process/workflow decision.
 ## Conflicts resolved during design review
 
 **C-A. Agent count: 3 LLM agents + 4 non-LLM steps.** The LLM agents are PlannerAgent,
-ReasonerAgent, and ValidatorAgent. The non-LLM steps are SafetyGuard, RetrieverAgent,
-SimilarityThreshold, and RankerAgent. RankerAgent uses the local cross-encoder
+ReasonerAgent, and ValidatorAgent. The non-LLM steps are SafetyGuard, Retriever,
+SimilarityThreshold, and ReRanker. ReRanker uses the local cross-encoder
 `ms-marco-MiniLM-L-6-v2` and makes no API call. Custom mode is therefore 3 LLM calls plus 1 local
 encoder call per query.
 

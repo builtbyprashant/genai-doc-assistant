@@ -43,9 +43,9 @@ Rather than a single LLM call, the system uses a **7-step agent pipeline** with 
 | Step | Role |
 |---|---|
 | SafetyGuard | Input validation, prompt injection detection, length checks. Rule-based, no LLM call. |
-| RetrieverAgent | Fetches top-k chunks from ChromaDB using cosine similarity. DB call, no LLM. |
+| Retriever | Fetches top-k chunks from ChromaDB using cosine similarity. DB call, no LLM. |
 | SimilarityThreshold | Checks if top chunk clears minimum score. Rule-based, no LLM call. |
-| RankerAgent | Reorders retrieved chunks by answer relevance using cross-encoder model (ms-marco-MiniLM-L-6-v2). Encoder, no LLM call. |
+| ReRanker | Reorders retrieved chunks by answer relevance using cross-encoder model (ms-marco-MiniLM-L-6-v2). Encoder, no LLM call. |
 
 Each step has a specific responsibility. The output of each step feeds the next. A step failing or short-circuiting stops the pipeline immediately, no wasted LLM calls downstream.
 
@@ -128,12 +128,12 @@ The system uses three models (two local encoders and one cloud LLM) and no RAG f
 | Component | Type | Used by | Purpose | API key? |
 |---|---|---|---|---|
 | `all-MiniLM-L6-v2` | Bi-encoder | ChromaDB | Embed chunks + queries → 384-dim vectors for semantic search | No, local |
-| `ms-marco-MiniLM-L-6-v2` | Cross-encoder | RankerAgent | Score query + chunk jointly for precise answer relevance | No, local |
+| `ms-marco-MiniLM-L-6-v2` | Cross-encoder | ReRanker | Score query + chunk jointly for precise answer relevance | No, local |
 | `claude-haiku-4-5` (default, configurable, D-9) | LLM (Anthropic) | Planner, Reasoner, Validator, llama_agent | Query rewriting, answer generation, validation, ReAct loop | Yes |
 
 `all-MiniLM-L6-v2`, encodes text independently into vectors. Fast, pre-computed at indexing time. Broad semantic similarity. Cannot understand query-chunk relationship jointly.
 
-`ms-marco-MiniLM-L-6-v2`, reads query and chunk together in one pass. Slower but more precise, understands the specific relationship between question and chunk. Used by RankerAgent in all modes.
+`ms-marco-MiniLM-L-6-v2`, reads query and chunk together in one pass. Slower but more precise, understands the specific relationship between question and chunk. Used by ReRanker in all modes.
 
 `claude-haiku-4-5` (default), full LLM for reasoning and generation. 3 calls per query in custom mode. Variable 1–4 calls in llama_index mode (ReAct loop, D-7; stops early on diminishing returns, D-15). Requires Anthropic API key. We switched the default from `claude-sonnet-4-6` to Haiku to improve response time (~3× faster generation, D-9); the model stays configurable via `ANTHROPIC_MODEL` (set `claude-sonnet-4-6` for maximum quality). In custom mode the answer is streamed to the UI (D-10).
 
@@ -185,11 +185,11 @@ FastAPI backend             ← REST API, routing, logging, input validation
         ↓
   Step 2: PlannerAgent, intent analysis + query rewrite (LLM call)
         ↓
-  Step 3: RetrieverAgent, top-k semantic search with optional doc filter (ChromaDB, no LLM)
+  Step 3: Retriever, top-k semantic search with optional doc filter (ChromaDB, no LLM)
         ↓
   Step 4: SimilarityThreshold, if top score < SIMILARITY_THRESHOLD → short-circuit (rule-based, no LLM)
         ↓
-  Step 5: RankerAgent, reorder chunks by answer relevance
+  Step 5: ReRanker, reorder chunks by answer relevance
         │                        uses cross-encoder/ms-marco-MiniLM-L-6-v2 (no LLM call)
         ↓
   Step 6: ReasonerAgent, grounded answer from reranked context (LLM call, prompt cached)
@@ -199,7 +199,7 @@ FastAPI backend             ← REST API, routing, logging, input validation
   Response, answer + confidence + sources + chunks + scores + trace
 
 LLM calls per query:    3 (Planner + Reasoner + Validator)
-Encoder calls per query: 1 (RankerAgent, ms-marco-MiniLM-L-6-v2, not an LLM call)
+Encoder calls per query: 1 (ReRanker, ms-marco-MiniLM-L-6-v2, not an LLM call)
 Total model calls:       4 per query
 ```
 
@@ -242,7 +242,7 @@ See network diagram (PHASE1_NETWORK.png) for the visual version.
 | 5. Vector knowledge store | vector_store.py, ChromaDB index and upsert |
 | 6. Intelligent retrieval | retrieve(), cosine similarity search with doc metadata filter. Collection created with `hnsw:space=cosine`; `similarity = 1 - distance` applied to every result. |
 | 7. RAG pipeline | reasoner_agent(), context-grounded LLM generation with prompt caching |
-| 8. Agent-based reasoning | pipeline.py, 7-step orchestrator: SafetyGuard → Planner → Retriever → Threshold → Ranker → Reasoner → Validator. 3 LLM agents + 4 non-LLM steps. |
+| 8. Agent-based reasoning | pipeline.py, 7-step orchestrator: SafetyGuard → Planner → Retriever → Threshold → ReRanker → Reasoner → Validator. 3 LLM agents + 4 non-LLM steps. |
 | 9. Reliability and safety | Input guardrails, similarity threshold short-circuit, output validation, retry pattern, log sanitisation |
 
 ---
@@ -478,7 +478,7 @@ AGENT_MODE=custom
 #               Use to benchmark and tune the custom pipeline
 
 # ── Re-ranker ───────────────────────────────────────────────────────────────
-# RankerAgent always uses cross-encoder/ms-marco-MiniLM-L-6-v2 (encoder mode).
+# ReRanker always uses cross-encoder/ms-marco-MiniLM-L-6-v2 (encoder mode).
 # No RERANKER_MODE env var: encoder is fixed. Not an LLM call.
 # Model is pre-downloaded in Docker image. Runs on CPU. No API key required.
 
@@ -531,7 +531,7 @@ GROUNDING_THRESHOLD=0.6              # RESERVED FOR PHASE 2, not read by Phase 1
                                       # below this trigger a conditional ValidatorAgent LLM call.
 ```
 
-**RankerAgent always uses the cross-encoder model, no feature flag, no LLM call for ranking.**
+**ReRanker always uses the cross-encoder model, no feature flag, no LLM call for ranking.**
 
 The switch requires only a `.env` change and container restart, no code changes.
 
@@ -550,7 +550,7 @@ genai-doc-assistant/
 │   │   ├── pipeline.py          ← 7-step orchestrator + AGENT_MODE routing
 │   │   ├── safety.py            ← SafetyGuard (rule-based, no LLM)
 │   │   ├── planner.py           ← PlannerAgent (LLM call)
-│   │   ├── ranker.py            ← RankerAgent (cross-encoder, no LLM)
+│   │   ├── ranker.py            ← ReRanker (cross-encoder, no LLM)
 │   │   ├── reasoner.py          ← ReasonerAgent (LLM call, prompt cached)
 │   │   ├── validator.py         ← ValidatorAgent (LLM call)
 │   │   └── llama_agent.py       ← python ReAct loop (AGENT_MODE=llama_index)
@@ -611,7 +611,7 @@ streamlit run frontend/app.py
 - Document storage is local container filesystem (not persistent across container recreation without a volume mount)
 - Streaming is custom-mode only (D-10): `custom` streams the answer token-by-token; `llama_index` and `compare` are returned after full generation
 - File size limit: 10MB per document
-- Query response time is ~2–4 seconds typical on the Haiku default (3 LLM calls: Planner + Reasoner + Validator, plus 1 encoder call for RankerAgent); in custom mode the answer streams, so the first words appear in ~2–4s rather than the full wait (D-9, D-10)
+- Query response time is ~2–4 seconds typical on the Haiku default (3 LLM calls: Planner + Reasoner + Validator, plus 1 encoder call for ReRanker); in custom mode the answer streams, so the first words appear in ~2–4s rather than the full wait (D-9, D-10)
 - Embedding model (all-MiniLM-L6-v2) has a 256 token (~192 word) limit, chunk size set to 200 words to respect this limit
 - CSV and Excel documents with many columns or long cell values produce lower quality retrieval, row-aware chunking deferred to Phase 2
 - Embedding model is optimised for general English, technical, medical, or non-English documents may produce lower retrieval quality

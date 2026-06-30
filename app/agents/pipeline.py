@@ -5,8 +5,8 @@ Routes a question through one of three modes (DECISIONS: C-D). `agent_mode` is a
 resolves the default and passes it in. (DECISIONS: D-6d)
 
 Custom mode is the 7 named steps (C-H):
-  SafetyGuard → PlannerAgent → RetrieverAgent → SimilarityThreshold
-              → RankerAgent → ReasonerAgent → ValidatorAgent
+  SafetyGuard → PlannerAgent → Retriever → SimilarityThreshold
+              → ReRanker → ReasonerAgent → ValidatorAgent
 with two short-circuits (empty store, below threshold) that return HTTP 200 with
 `short_circuit: true` rather than an error. (DECISIONS: C-F)
 """
@@ -85,7 +85,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
     trace = [_step("SafetyGuard", "passed", "Input passed all safety checks.", safety_ms)]
 
     if store.chunk_count() == 0:
-        trace.append(_step("RetrieverAgent", "skipped", "no_documents_indexed"))
+        trace.append(_step("Retriever", "skipped", "no_documents_indexed"))
         return _short_circuit("no_documents_indexed", trace,
                               "No documents are indexed. Cannot retrieve context.")
 
@@ -104,7 +104,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
     retrieve_ms = _ms(t)
     top_score = retrieved[0]["similarity_score"] if retrieved else 0.0
     passed = bool(retrieved) and top_score >= settings.similarity_threshold
-    trace.append(_step("RetrieverAgent", "completed", {
+    trace.append(_step("Retriever", "completed", {
         "chunks_retrieved": len(retrieved), "top_similarity_score": top_score,
         "threshold_passed": passed,
     }, retrieve_ms))
@@ -125,7 +125,7 @@ def _custom_core(question, filter_filenames, store, settings, top_k, safety_ms=0
 
     t = time.perf_counter()
     ranked = ranker.ranker_agent(query, retrieved, top_k=settings.top_k_rerank)
-    trace.append(_step("RankerAgent", "completed", {
+    trace.append(_step("ReRanker", "completed", {
         "model": settings.reranker_model, "chunks_in": len(retrieved), "chunks_out": len(ranked),
     }, _ms(t)))
 
@@ -412,7 +412,7 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
         return ("done", response)
 
     if store.chunk_count() == 0:
-        trace.append(_step("RetrieverAgent", "skipped", "no_documents_indexed"))
+        trace.append(_step("Retriever", "skipped", "no_documents_indexed"))
         yield done(_short_circuit("no_documents_indexed", trace,
                                   "No documents are indexed. Cannot retrieve context."))
         return
@@ -432,7 +432,7 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
     retrieve_ms = _ms(t)
     top_score = retrieved[0]["similarity_score"] if retrieved else 0.0
     passed = bool(retrieved) and top_score >= settings.similarity_threshold
-    trace.append(_step("RetrieverAgent", "completed", {
+    trace.append(_step("Retriever", "completed", {
         "chunks_retrieved": len(retrieved), "top_similarity_score": top_score,
         "threshold_passed": passed,
     }, retrieve_ms))
@@ -454,7 +454,7 @@ def _custom_stream(question, filter_filenames, store, settings, top_k, safety_ms
 
     t = time.perf_counter()
     ranked = ranker.ranker_agent(query, retrieved, top_k=settings.top_k_rerank)
-    trace.append(_step("RankerAgent", "completed", {
+    trace.append(_step("ReRanker", "completed", {
         "model": settings.reranker_model, "chunks_in": len(retrieved), "chunks_out": len(ranked),
     }, _ms(t)))
 
