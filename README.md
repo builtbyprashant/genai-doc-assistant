@@ -12,6 +12,7 @@
 - [What Makes This Different](#what-makes-this-different)
 - [Demo](#demo)
 - [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
 - [Supported Document Formats](#supported-document-formats)
 - [How It Works](#how-it-works)
@@ -22,7 +23,6 @@
 - [Industry-Standard Best Practices](#industry-standard-best-practices)
 - [Limitations](#limitations)
 - [Roadmap (Future Version)](#roadmap-future-version)
-- [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Acknowledgements](#acknowledgements)
 - [Author](#author)
@@ -39,6 +39,8 @@ An AI-powered document intelligence system that allows users to upload enterpris
 **What makes it agentic:** Rather than a single LLM call, in **custom** mode this system uses three specialised LLM agents (Planner, Reasoner, Validator) that collaborate in sequence, each with a focused role. Four non-LLM pipeline steps handle safety, retrieval, threshold checking, and cross-encoder re-ranking without wasting API calls.
 While in **llama_index** mode (inspired by LlamaIndex) it uses a ReAct loop agent, built from scratch using python.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## What Makes This Different
@@ -54,6 +56,8 @@ Built for engineers who want to understand what is happening inside their RAG pi
 ---
 
 **Built from scratch.** We implemented three pipeline modes using python and ChromaDB. For LLM interaction Anthropic API is used, which makes it hardbound with Anthropic LLMs of choice as of now. The `custom` mode is a deterministic sequential pipeline optimised for predictability and makes **3 LLM calls** per request (Planner, Reasoner, Validator; fewer when the pipeline short-circuits on a safety block or low similarity). The `llama_index` mode implements the ReAct reasoning pattern without the framework dependency; it makes **1–4 LLM calls** and stops early when a search stops surfacing new content (a **diminishing-returns guard**) rather than burning its search budget on redundant retrievals. `compare` mode runs both on the same query for evaluation.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -92,6 +96,8 @@ A walkthrough on three Wikipedia articles (Artificial Intelligence, Machine Lear
 **8. Retrieved chunks, side by side.** See exactly which passages each pipeline used to ground its answer.
 
 ![Retrieved chunks comparison](assets/8.RetrievedChunks_Comparison.png)
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -168,6 +174,27 @@ The loop runs on a single system prompt with a cached context block that grows a
 > and the savings from prompt caching, are visible at a glance.
 
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Streamlit (Python) |
+| Backend API | FastAPI (Python) |
+| Vector database | ChromaDB (embedded, cosine space, persisted) |
+| Embedding model | all-MiniLM-L6-v2 (sentence-transformers, 384 dimensions) |
+| Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
+| LLM | Claude `claude-haiku-4-5` via Anthropic API (default, for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
+| Document parsing | Per-format libraries, pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
+| llama_index mode | Lightweight ReAct loop built using python |
+| Testing | pytest + httpx |
+| Deployment | Docker Compose (primary) + Python venv (local dev) |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Quick Start
@@ -217,6 +244,8 @@ docker compose down -v       # stop containers, DELETE all indexed data
 
 > ⚠️ `docker compose down -v` permanently deletes the ChromaDB volume. All indexed documents must be re-uploaded.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Supported Document Formats
@@ -233,6 +262,8 @@ Each format is parsed by a dedicated library (pypdf, python-docx, pandas, pyyaml
 | JSON | .json | Keys and values converted to readable text. |
 | YAML | .yaml, .yml | Parsed to key-value text. Config files supported. |
 | Word | .docx | Text extracted from paragraphs and tables. |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -267,6 +298,8 @@ The `llama_agent` runs a **Think → Search → Observe** loop on a single syste
 #### `compare` mode: both pipelines, side by side (4–7 LLM calls)
 Runs the `custom` and `llama_index` pipelines on the same query and renders the results side by side: answers, confidence scores, retrieved chunks with similarity scores, LLM call counts, per-step timings, and full agent traces for both. Validation runs on the custom answer (or on the llama_index answer if the custom pipeline short-circuits). This turns the system into an **evaluation workbench**: you can see exactly where the two approaches diverge and compare them on cost, latency, and answer quality.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Design Documentation
@@ -283,6 +316,8 @@ This project was designed before any code was written. The core design documenta
 | [Decision Log](docs/DecisionLogs.md) | Key design decisions, conflicts resolved, and rationale |
 
 > Design-first development was a core principle of this project: the architecture, API contracts, requirements, and edge cases were all documented and reviewed before any code was written. The decision log captures the key decisions and their rationale.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -367,6 +402,8 @@ Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`),
 
 The embedding model is *plugged into* ChromaDB as its embedding function, it is not ChromaDB-specific. A different vector backend (a future version) would use the same model. The only coupling is the 384-dim/re-index rule above, which is true of any vector store.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## API
@@ -413,6 +450,8 @@ curl -N -X POST http://localhost:8000/query/stream \
   -d '{"question": "What are the ICU transfer criteria?", "agent_mode": "custom"}'
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Running Tests
@@ -430,6 +469,8 @@ pytest tests/test_api.py -v
 ```
 
 Tests cover all services, all API endpoints, edge cases from requirements, and pipeline short-circuit behaviour.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -463,6 +504,8 @@ The project follows production-grade engineering practices end to end.
 - **Grounded answers.** Generation is constrained to the retrieved context, with an independent Validator hallucination check, which reduces fabrication.
 - **Validated input and structured errors.** Uploaded files are validated on their raw bytes before any parser runs, and errors are returned as structured RFC-7807 problem details.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Limitations
@@ -478,6 +521,8 @@ The project follows production-grade engineering practices end to end.
 
 See Requirements and Assumptions in `/docs` for the full list with design rationale.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Roadmap (Future Version)
@@ -492,22 +537,7 @@ See Requirements and Assumptions in `/docs` for the full list with design ration
 - Authentication (API key middleware)
 - Maximum 2 LLM calls per query (deterministic grounding check replaces ValidatorAgent) in both the modes
 
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | Streamlit (Python) |
-| Backend API | FastAPI (Python) |
-| Vector database | ChromaDB (embedded, cosine space, persisted) |
-| Embedding model | all-MiniLM-L6-v2 (sentence-transformers, 384 dimensions) |
-| Re-ranking model | cross-encoder/ms-marco-MiniLM-L-6-v2 (sentence-transformers) |
-| LLM | Claude `claude-haiku-4-5` via Anthropic API (default, for speed; configurable via `ANTHROPIC_MODEL`, e.g. `claude-sonnet-4-6` for max quality) |
-| Document parsing | Per-format libraries, pypdf, python-docx, pandas, openpyxl, pyyaml, chardet (8 formats) |
-| llama_index mode | Lightweight ReAct loop built using python |
-| Testing | pytest + httpx |
-| Deployment | Docker Compose (primary) + Python venv (local dev) |
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -539,6 +569,8 @@ genai-doc-assistant/
 └── README.md
 ```
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Acknowledgements
@@ -553,6 +585,8 @@ This project stands on excellent open tools and services:
 - **[Docker](https://www.docker.com/) and [GitHub Actions](https://github.com/features/actions)**: containerized deployment and CI (lint, tests, image build).
 - **[Wikipedia](https://www.wikipedia.org/)**: the demo and the sample documents (`assets/sample-docs/`: Artificial Intelligence, Machine Learning, AGI) are exported from Wikipedia under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Freely shareable knowledge, gratefully used.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Author
@@ -560,6 +594,8 @@ This project stands on excellent open tools and services:
 It's [@builtbyprashant](https://github.com/builtbyprashant) as a learning project exploring production-grade Generative AI engineering, RAG pipelines, agentic systems, vector databases, CI/CD, and Docker deployment.
 
 Design-first methodology was adopted, wherein system architecture, API contracts, requirements, edge cases, CI pipeline, and deployment strategy were fully specified prior to implementation. Code was developed collaboratively with Claude Code under continuous and rigorous author oversight, encompassing design decisions, technical details, output validation, and test review.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
