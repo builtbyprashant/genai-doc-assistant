@@ -144,11 +144,19 @@ def _run(question, store, filter_filenames, top_k, usage, stream):
     def decide(instruction):
         """A decision turn — the model picks `SEARCH:` or `FINAL:`. Streaming: stream the turn
         but stay silent until it commits to `FINAL:` (a `SEARCH:` reply emits nothing), then
-        stream the answer body (Case 2). Batch: the retryable `llm.complete`. Returns the full
-        raw reply for the loop to parse."""
+        stream the answer body (Case 2). If the model goes off-protocol and replies with neither
+        marker, emit the clean answer once the stream ends — stripped via `_split_confidence` so
+        it matches the loop's fallback answer exactly (no `CONFIDENCE:` scaffolding leaks, since
+        the `FINAL:`-keyed extractor never engaged to bound it). Batch: the retryable
+        `llm.complete`. Returns the full raw reply for the loop to parse."""
         if not stream:
             return ask(instruction)
-        return (yield from _stream_reply(instruction, always_flush=False))
+        raw = yield from _stream_reply(instruction, always_flush=False)
+        if "SEARCH:" not in raw and "FINAL:" not in raw:
+            body = _split_confidence(raw)[0]
+            if body:
+                yield ("token", body)
+        return raw
 
     remember(store.retrieve(question, top_k=top_k, filter_filenames=filter_filenames))
 

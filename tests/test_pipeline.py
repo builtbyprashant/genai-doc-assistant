@@ -626,6 +626,35 @@ def test_llama_stream_decision_retries_before_first_token(monkeypatch):
     assert result["llm_calls"] == 1  # the retry is transparent — still one decision turn
 
 
+def test_llama_stream_bare_answer_emits_clean_without_confidence_leak(monkeypatch):
+    # Off-protocol decision turn: the model answers directly with a CONFIDENCE: line but no
+    # FINAL: prefix. The streamed text must be the clean answer (no CONFIDENCE: scaffolding) and
+    # must match the final answer — the FINAL:-keyed extractor never engaged to bound it, so
+    # decide() emits the _split_confidence-stripped body instead of dumping the raw.
+    def fake_stream(system, user, **kw):
+        for piece in ["Patients transfer ", "after four hours.\nCONF", "IDENCE: HIGH"]:
+            yield piece
+    monkeypatch.setattr(llm, "stream_text", fake_stream)
+    monkeypatch.setattr(llm, "complete", lambda system, user, **kw: "FINAL: unused")
+
+    tokens, result = [], None
+    gen = llama_agent.run_llama_agent_stream("question", _FreshStore())
+    try:
+        while True:
+            kind, payload = next(gen)
+            if kind == "token":
+                tokens.append(payload)
+    except StopIteration as finished:
+        result = finished.value
+
+    streamed = "".join(tokens)
+    assert "CONFIDENCE" not in streamed                     # scaffolding never leaks to the user
+    assert streamed.strip() == "Patients transfer after four hours."
+    assert result["answer"] == "Patients transfer after four hours."  # streamed == final
+    assert result["confidence"] == "high"                   # still parsed from the CONFIDENCE: line
+    assert result["llm_calls"] == 1
+
+
 def test_pipeline_logs_query_completed_with_step_timings(monkeypatch, indexed_store):
     """The backend logs one structured per-query line carrying the per-step timings —
     not just the uvicorn access line — and never the raw query (only its hash)."""
