@@ -1,5 +1,28 @@
 # Agentic RAG Knowledge System: UI Specification
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Layout Structure](#layout-structure)
+- [Sidebar: Document Manager](#sidebar-document-manager)
+  - [Section 1: System Status](#section-1-system-status)
+  - [Section 2: Upload Documents](#section-2-upload-documents)
+  - [Section 3: Indexed Documents](#section-3-indexed-documents)
+- [Main Area: Centre Column (Q&A)](#main-area-centre-column-qa)
+  - [Question Input](#question-input)
+  - [Answer Display](#answer-display)
+- [Main Area: Right Column (Pipeline Detail)](#main-area-right-column-pipeline-detail)
+  - [Empty State (before first query)](#empty-state-before-first-query)
+  - [After Query: Agent Trace](#after-query-agent-trace)
+  - [After Query: Retrieved Chunks](#after-query-retrieved-chunks)
+- [Page-Level Settings](#page-level-settings)
+- [Session State Variables](#session-state-variables)
+- [Error Display Rules](#error-display-rules)
+- [Responsive Behaviour](#responsive-behaviour)
+- [UI Limitations](#ui-limitations)
+
+---
+
 ## Overview
 
 Single-page Streamlit application. No navigation, no tabs, no page transitions.
@@ -7,6 +30,8 @@ The entire user journey, document management, question asking, answer reading, p
 inspection, happens on one screen.
 
 Layout: native Streamlit sidebar (collapsible) + two-column main area.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -23,6 +48,8 @@ Layout: native Streamlit sidebar (collapsible) + two-column main area.
 
 Streamlit column ratio: `st.columns([2, 1])` inside the main area.
 Sidebar uses `st.sidebar`, collapse arrow provided natively by Streamlit, no custom code.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -119,6 +146,8 @@ Indexed documents  (5)
 | Delete button | On click: confirmation prompt inline (`"Delete report.pdf? This cannot be undone."` with Yes / Cancel). On confirm: calls `DELETE /documents/{filename}`. Refreshes list on success. |
 | Empty state | `No documents indexed yet. Upload a document above to get started.` |
 | Document count | Shown in the section header: `Indexed documents (5)` |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -235,6 +264,8 @@ the right for details.
 Raw HTTP errors, stack traces, and JSON bodies are never shown in the centre column.
 The right column trace section surfaces detailed error info for technical users.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Main Area: Right Column (Pipeline Detail)
@@ -321,6 +352,8 @@ Only populated when `include_chunks: true` (always set to true by the Streamlit 
 | Score colours | Similarity/rerank score: green ≥ 0.75, amber 0.5–0.74, red < 0.5 |
 | Empty state (short-circuit) | "No chunks retrieved, pipeline stopped before retrieval." or "No chunks cleared the similarity threshold." depending on `short_circuit_reason` |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Page-Level Settings
@@ -334,6 +367,8 @@ Set once via `st.set_page_config()` at the top of `app.py`:
 | Layout | `"wide"`, uses full browser width |
 | Initial sidebar state | `"expanded"`, sidebar open on first load |
 | Menu items | Hide default Streamlit menu (clean demo appearance) |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -367,6 +402,8 @@ Streamlit session state keys used across the app:
 | `query_in_progress` | bool | True while a batch query is running. Disables Ask button. |
 | `GET /health` polling | (not session state) | Throttled with `@st.cache_data(ttl=30)` on `fetch_health()`, at most one `/health` call per 30s regardless of reruns, matching the Docker healthcheck interval. `fetch_health.clear()` is called after upload/delete so the doc/chunk stats refresh immediately. |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Error Display Rules
@@ -381,6 +418,8 @@ These rules apply everywhere in the UI without exception:
 6. Every error message ends with what the user can do next.
 7. The `request_id` is shown at the bottom of the trace section for support reference.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## Responsive Behaviour
@@ -392,6 +431,8 @@ Streamlit `layout="wide"` fills the browser window. The column ratio `[2, 1]` me
 On narrow screens (laptop at 1280px), the sidebar auto-collapses to give maximum space
 to the main content. Users on narrow screens should collapse the sidebar for best experience.
 No mobile optimisation currently, document as a known limitation.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 

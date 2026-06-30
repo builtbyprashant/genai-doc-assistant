@@ -1,10 +1,44 @@
 # Agentic RAG Knowledge System: Requirements and Assumptions
 
+## Table of Contents
+
+- [Purpose](#purpose)
+- [1. Design Decisions](#1-design-decisions)
+  - [1.1 Document Query Scope](#11-document-query-scope)
+  - [1.2 Re-ranker Mode](#12-re-ranker-mode)
+  - [1.3 Duplicate Document Handling](#13-duplicate-document-handling)
+  - [1.4 API Response Flags](#14-api-response-flags)
+  - [1.5 API Versioning](#15-api-versioning)
+  - [1.6 User Sessions and Multi-Browser Behaviour](#16-user-sessions-and-multi-browser-behaviour)
+- [2. Functional Assumptions](#2-functional-assumptions)
+  - [2.1 User and Usage Model](#21-user-and-usage-model)
+  - [2.2 Document Assumptions](#22-document-assumptions)
+  - [2.3 Infrastructure Assumptions](#23-infrastructure-assumptions)
+- [3. Acceptable Behaviours by Edge Case](#3-acceptable-behaviours-by-edge-case)
+  - [3.1 Document Ingestion](#31-document-ingestion)
+  - [3.2 Retrieval](#32-retrieval)
+  - [3.3 Agent Pipeline](#33-agent-pipeline)
+  - [3.4 Input Guardrails](#34-input-guardrails)
+  - [3.5 UI Behaviour](#35-ui-behaviour)
+  - [3.6 Operational](#36-operational)
+- [4. Capacity and Limits](#4-capacity-and-limits)
+- [5. Embedding Model Constraints and Chunking Rationale](#5-embedding-model-constraints-and-chunking-rationale)
+  - [Model Used](#model-used)
+  - [Why Chunk Size is 200 Words](#why-chunk-size-is-200-words)
+  - [CSV Chunking Limitation](#csv-chunking-limitation)
+  - [Token-to-Word Conversion Reference](#token-to-word-conversion-reference)
+- [6. Scoped for Later](#6-scoped-for-later)
+- [7. Glossary](#7-glossary)
+
+---
+
 ## Purpose
 
 This document records every explicit design decision, functional assumption, acceptable behaviour, and known limitation for the current version. It exists to make implicit choices visible, provide rationale for reviewers and evaluators, and serve as the authoritative reference during build.
 
 Every decision here was made consciously. Where multiple options existed, the chosen option and the reason for choosing it are both documented.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -92,6 +126,8 @@ If the same filename is uploaded with different content (different hash), treat 
 
 **Concurrency risk:** Embedded ChromaDB is not designed for concurrent writes. Simultaneous uploads from multiple tabs can corrupt the index. Mitigation: a file-based write lock during indexing causes a second upload to wait rather than corrupt. Document as a known limitation, sequential uploads are assumed for the current version.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## 2. Functional Assumptions
@@ -122,6 +158,8 @@ If the same filename is uploaded with different content (different hash), treat 
 - The Anthropic API key (read from the host shell/OS environment, not `.env`, D-11) is valid and has sufficient quota
 - The host machine has at least 4GB RAM available for the Docker environment
 - The ChromaDB volume mount path is writable by the Docker process
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -215,6 +253,8 @@ If the same filename is uploaded with different content (different hash), treat 
 | Query PII in logs | Raw user queries are never logged. Every log line records `query_hash` (SHA-256 first 8 hex chars) and `query_length` instead. Hash is deterministic, same query always produces same hash for correlation. Cannot be reversed to recover original query. |
 | `.env` file on GitHub | `.env` is listed in `.gitignore`. Only `.env.example` (non-secret defaults, no key) is committed. The API key is never in `.env`, it comes from the host shell/OS env (D-11). Enforced by project convention, documented in README. |
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## 4. Capacity and Limits
@@ -239,6 +279,8 @@ All limits are configurable via environment variables unless marked as fixed.
 | Docker log max size | 10 MB | docker-compose.yml | Per log file |
 | Docker log max files | 3 | docker-compose.yml | Rotating |
 | Recommended total corpus | ~5000 chunks | n/a | Beyond this, embedded ChromaDB slows noticeably (~20 × 10-page PDFs) |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
@@ -294,6 +336,8 @@ Row text: "Name: John Smith | Age: 45 | Diagnosis: Hypertension | Admitted: 2024
 
 Rule of thumb: 1 token ≈ 0.75 words for common English. Technical documents, medical terms, numbers, and structured data (CSV pipes, colons) tokenize less efficiently, budget 0.6 words per token for safety.
 
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
 ---
 
 ## 6. Scoped for Later
@@ -314,6 +358,8 @@ The following were considered and explicitly deferred to a future version:
 | Document update without full re-upload | Requires chunk-level diffing, future version |
 | Grafana / external observability | Future version |
 | AWS deployment | Future version |
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
 
 ---
 
