@@ -446,5 +446,3 @@ No mobile optimisation currently, document as a known limitation.
 | No dark mode toggle | Follows system/browser preference via Streamlit default. |
 | Sidebar collapse on mobile | Streamlit auto-collapses sidebar on narrow viewports. |
 | No drag-and-drop reordering | Document list is ordered by index time, not user-defined. |
-
-<!-- refinement -->

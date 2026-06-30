@@ -605,5 +605,3 @@ Design-first methodology was adopted, wherein system architecture, API contracts
 ## License
 
 Released under the [MIT License](LICENSE).
-
-<!-- refinement -->

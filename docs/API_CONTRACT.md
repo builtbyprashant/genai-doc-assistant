@@ -867,5 +867,3 @@ accommodate them without breaking changes where possible.
 | API key authentication | Adds `Authorization: Bearer <key>` header requirement. New 401 error type. |
 | Multi-turn conversation | Adds optional `session_id` and `conversation_history` fields to POST /query body. |
 | Streaming responses | **Done (D-10)**, `POST /query/stream` streams the `custom`-mode answer (text + `0x1E` + JSON metadata). A future version may move it to Server-Sent Events and add `llama_index` streaming. Existing `/query` remains. |
-
-<!-- refinement -->

@@ -196,5 +196,3 @@ build is path-gated: it runs only on a push to `main` that changed an image-affe
 image can only break when dependencies or Dockerfiles change. A scheduled job keeps the dependency
 and model-download caches warm so a low-activity repo does not go cold, and a build-layer cache keeps
 warm builds short.
-
-<!-- refinement -->

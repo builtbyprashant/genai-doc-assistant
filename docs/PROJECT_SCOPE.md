@@ -800,5 +800,3 @@ grounding behaviour that the current version establishes.
   calls per query by replacing the Validator's LLM call with a deterministic grounding check on the
   normal path, reserving the LLM Validator for higher-stakes queries. This lowers cost and latency
   without weakening the grounding guarantees.
-
-<!-- refinement -->
