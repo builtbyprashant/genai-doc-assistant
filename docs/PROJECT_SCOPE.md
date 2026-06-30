@@ -577,7 +577,7 @@ The switch requires only a `.env` change and container restart, no code changes.
 
 ## Project Folder Structure
 
-Following the instructor-specified structure with our file names preserved:
+A conventional project structure, with our file names preserved:
 
 ```
 genai-doc-assistant/

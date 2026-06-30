@@ -34,7 +34,7 @@
 
 ## Purpose
 
-This document records every explicit design decision, functional assumption, acceptable behaviour, and known limitation for the current version. It exists to make implicit choices visible, provide rationale for reviewers and evaluators, and serve as the authoritative reference during build.
+This document records every explicit design decision, functional assumption, acceptable behaviour, and known limitation for the current version. It exists to make implicit choices visible, provide rationale for reviewers, and serve as the authoritative reference during build.
 
 Every decision here was made consciously. Where multiple options existed, the chosen option and the reason for choosing it are both documented.
 
