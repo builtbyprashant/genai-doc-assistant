@@ -346,7 +346,7 @@ The following were considered and explicitly deferred to a future version:
 
 | Feature | Reason deferred |
 |---|---|
-| OCR for scanned PDFs | Heavy dependency (Tesseract), significant complexity, not required for capstone |
+| OCR for scanned PDFs | Heavy dependency (Tesseract), significant complexity, out of current scope |
 | Password-protected PDF unlocking | Niche use case, security complexity |
 | Multi-tenant document isolation | Requires authentication, session management, future version |
 | Authentication and access control | Future version |

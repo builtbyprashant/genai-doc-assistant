@@ -783,7 +783,7 @@ grounding behaviour that the current version establishes.
 - **Multilingual support.** The current embedding model is primarily English. Because the embedding
   model is already a configuration knob (subject to the re-index rule), a future version can swap in
   a multilingual model to raise quality on non-English documents.
-- **OCR and protected PDFs.** Scanned or image-only PDFs (no text layer) and password-protected PDFs are rejected today; both were deferred as heavy or niche dependencies not needed for the capstone. A future version can add OCR (for example Tesseract) and password-unlock support.
+- **OCR and protected PDFs.** Scanned or image-only PDFs (no text layer) and password-protected PDFs are rejected today; both were deferred as heavy or niche dependencies not needed for the current scope. A future version can add OCR (for example Tesseract) and password-unlock support.
 
 ### Product features
 - **Multi-turn conversation.** The current version is single-turn. A future version adds conversation history
