@@ -16,12 +16,12 @@
 - [Task Mapping](#task-mapping)
 - [Reliability and Safety Controls](#reliability-and-safety-controls)
 - [Key Design Principle](#key-design-principle)
-- [Extensibility Hooks for Future Versions](#extensibility-hooks-for-future-versions)
 - [Prompt Caching Strategy (D-12)](#prompt-caching-strategy-d-12)
 - [Environment Variables](#environment-variables)
 - [Project Folder Structure](#project-folder-structure)
-- [Limitations](#limitations)
 - [Docker Compose Design](#docker-compose-design)
+- [Limitations](#limitations)
+- [Extensibility Hooks (built in now)](#extensibility-hooks-built-in-now)
 - [Scope for Future Versions](#scope-for-future-versions)
 
 ---
@@ -469,22 +469,6 @@ The same codebase runs locally via Docker Compose and on cloud infrastructure wi
 
 ---
 
-## Extensibility Hooks for Future Versions
-
-These seams are added now at near-zero cost so a future version is an addition, not a rewrite. They do not change current behaviour.
-
-**a) Vector store isolation.** `vector_store.py` is the **only** module that imports ChromaDB. All other code calls it through a narrow internal interface (`index_chunks`, `retrieve`, `list_documents`, `delete_document`, `chunk_count`). A future version adds a `VectorStore` ABC + factory on top without touching callers.
-
-**b) File-saving isolation.** All file persistence goes through `save_upload()` in `app/services/storage.py`. The system writes to the local filesystem; a future version swaps the body for S3, one function, no other code changes.
-
-**c) Chunking dispatch.** `chunk_service.py` routes by file extension even though every type currently calls the same `word_chunker()`. A future version adds `row_chunker()` (CSV/Excel) and `page_chunker()` (PDF) to the same router without touching callers.
-
-**d) `agent_mode` plumbed through the request.** `pipeline.py` never reads the `AGENT_MODE` env var directly. `config.py` reads it once as the default; the value is passed as a parameter down the call chain. The optional `agent_mode` field on `POST /query` overrides it per request (required for `compare` mode).
-
-<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
-
----
-
 ## Prompt Caching Strategy (D-12)
 
 Anthropic prompt caching is configurable via `ANTHROPIC_CACHE_MODE` (`block` | `prompt` | `off`):
@@ -659,25 +643,6 @@ streamlit run frontend/app.py
 
 ---
 
-## Limitations
-
-- Single-turn Q&A only (no conversation history)
-- ChromaDB is embedded, not suitable for concurrent multi-user load at scale
-- No user authentication or access control
-- Document storage is local container filesystem (not persistent across container recreation without a volume mount)
-- Streaming is custom-mode only (D-10): `custom` streams the answer token-by-token; `llama_index` and `compare` are returned after full generation
-- File size limit: 10MB per document
-- Query response time is ~2–4 seconds typical on the Haiku default (3 LLM calls: Planner + Reasoner + Validator, plus 1 encoder call for ReRanker); in custom mode the answer streams, so the first words appear in ~2–4s rather than the full wait (D-9, D-10)
-- Embedding model (all-MiniLM-L6-v2) has a 256 token (~192 word) limit, chunk size set to 200 words to respect this limit
-- CSV and Excel documents with many columns or long cell values produce lower quality retrieval, row-aware chunking deferred to a future version
-- Embedding model is optimised for general English, technical, medical, or non-English documents may produce lower retrieval quality
-- **Original uploaded files are not persisted**, only chunks are stored in ChromaDB. If the ChromaDB volume is lost or deleted, all indexed content is gone and documents must be re-uploaded. There is no way to recover without the original files.
-- `vector_store.py` is tightly coupled to ChromaDB, swapping to another vector database requires rewriting this file. Backend abstraction layer is deferred to a future version.
-
-<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
-
----
-
 ## Docker Compose Design
 
 ### Three Key Concepts
@@ -744,10 +709,45 @@ backend:
 
 ---
 
+## Limitations
+
+- Single-turn Q&A only (no conversation history)
+- ChromaDB is embedded, not suitable for concurrent multi-user load at scale
+- No user authentication or access control
+- Document storage is local container filesystem (not persistent across container recreation without a volume mount)
+- Streaming is custom-mode only (D-10): `custom` streams the answer token-by-token; `llama_index` and `compare` are returned after full generation
+- File size limit: 10MB per document
+- Query response time is ~2–4 seconds typical on the Haiku default (3 LLM calls: Planner + Reasoner + Validator, plus 1 encoder call for ReRanker); in custom mode the answer streams, so the first words appear in ~2–4s rather than the full wait (D-9, D-10)
+- Embedding model (all-MiniLM-L6-v2) has a 256 token (~192 word) limit, chunk size set to 200 words to respect this limit
+- CSV and Excel documents with many columns or long cell values produce lower quality retrieval, row-aware chunking deferred to a future version
+- Embedding model is optimised for general English, technical, medical, or non-English documents may produce lower retrieval quality
+- **Original uploaded files are not persisted**, only chunks are stored in ChromaDB. If the ChromaDB volume is lost or deleted, all indexed content is gone and documents must be re-uploaded. There is no way to recover without the original files.
+- `vector_store.py` is tightly coupled to ChromaDB, swapping to another vector database requires rewriting this file. Backend abstraction layer is deferred to a future version.
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
+---
+
+## Extensibility Hooks (built in now)
+
+These seams are added now at near-zero cost so a future version is an addition, not a rewrite. They do not change current behaviour.
+
+**a) Vector store isolation.** `vector_store.py` is the **only** module that imports ChromaDB. All other code calls it through a narrow internal interface (`index_chunks`, `retrieve`, `list_documents`, `delete_document`, `chunk_count`). A future version adds a `VectorStore` ABC + factory on top without touching callers.
+
+**b) File-saving isolation.** All file persistence goes through `save_upload()` in `app/services/storage.py`. The system writes to the local filesystem; a future version swaps the body for S3, one function, no other code changes.
+
+**c) Chunking dispatch.** `chunk_service.py` routes by file extension even though every type currently calls the same `word_chunker()`. A future version adds `row_chunker()` (CSV/Excel) and `page_chunker()` (PDF) to the same router without touching callers.
+
+**d) `agent_mode` plumbed through the request.** `pipeline.py` never reads the `AGENT_MODE` env var directly. `config.py` reads it once as the default; the value is passed as a parameter down the call chain. The optional `agent_mode` field on `POST /query` overrides it per request (required for `compare` mode).
+
+<div align="right"><a href="#table-of-contents">&#8593; back to top</a></div>
+
+---
+
 ## Scope for Future Versions
 
 The current version is a self-contained local system. The items below are the planned direction for future
-versions, building on the extensibility seams already in place (see *Extensibility Hooks for Future Versions*).
+versions, building on the extensibility seams already in place (see *Extensibility Hooks (built in now)*).
 These are production-hardening and feature additions; none of them change the core retrieval and
 grounding behaviour that the current version establishes.
 
