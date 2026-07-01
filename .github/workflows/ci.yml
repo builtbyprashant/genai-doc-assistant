@@ -20,6 +20,10 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so paths-filter diffs the push base (github.event.before)
+          # locally instead of fetching it over the network, which flakes on push.
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
