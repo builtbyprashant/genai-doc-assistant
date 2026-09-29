@@ -380,6 +380,14 @@ docker compose logs backend | grep llm_usage
 #  "input_tokens":120,"output_tokens":30,"cache_read_input_tokens":95,"cache_creation_input_tokens":0}
 ```
 
+> **Research that grew out of this project.** The caching behaviour above, in particular how
+> *switching the system prompt between loop phases* silently breaks accumulated-prefix reuse and,
+> for short loops, can cost *more* than no caching at all, is characterised formally (a cost model,
+> a four-architecture taxonomy, and live measurements) in a short paper that started from exactly
+> this codebase: *Prefix Stability for Prompt Caching in LLM Agents: When It Helps and When It
+> Backfires* (GlobalSouthAI workshop, NeurIPS 2026). Fully reproducible code and data:
+> **[prefix-stability-pv1](https://github.com/builtbyprashant/prefix-stability-pv1)**.
+
 ### Swappable models
 
 Both local models are chosen via env vars (`EMBEDDING_MODEL`, `RERANKER_MODEL`), no code change needed. They are independent of each other, but the embedding model is constrained by the vector index.
