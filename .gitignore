@@ -28,3 +28,6 @@ docs/NotForGH/
 # OS / editor noise
 .DS_Store
 Thumbs.db
+
+# Claude Code's local session settings, never committed
+.claude/settings.local.json
