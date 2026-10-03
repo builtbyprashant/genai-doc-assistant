@@ -145,7 +145,7 @@ Browser ──▶ Streamlit UI ──HTTP──▶ FastAPI backend ──▶ ReA
         └──▶ Anthropic API  (one llama_agent; context grows with each turn and is cached)
 ```
 
-The loop runs on a single system prompt with a cached context block that grows as it searches, so each turn (including the final synthesis) reads the previous turn's context from cache. A **diminishing-returns guard** stops searching once a SEARCH stops surfacing new chunks, holding the loop to 1–4 LLM calls instead of burning the whole search budget.
+The loop runs on a single system prompt; the accumulated context is sent as one cache block per chunk (append-only), so each turn (including the final synthesis) reads the previous turns' context from cache and writes only the new chunks. A **diminishing-returns guard** stops searching once a SEARCH stops surfacing new chunks, holding the loop to 1–4 LLM calls instead of burning the whole search budget.
 
 ### Modes and pipeline steps
 
@@ -364,8 +364,10 @@ the **Reasoner and Validator process the same context**, so the Reasoner writes 
 Validator reads it instead of re-processing it. The context is placed in its own `cache_control`
 block at the head of the user message, with the agent-specific task trailing it uncached; both
 agents share a grounding system so the cached prefix matches. In `llama_index` mode the whole
-ReAct loop runs on one system and the cached `question + context` block **grows with each turn**, so
-each turn (including the final synthesis) reads the previous turn's context from cache.
+ReAct loop runs on one system, and the accumulated `question + context` is emitted as **one cache
+block per retrieved chunk** (append-only), so every prior block boundary stays byte-identical as the
+context grows. Each turn (including the final synthesis) therefore reads the previous turns' context
+from cache and writes only the newly-retrieved chunks.
 
 > **Why not cache the system prompts?** They're ~100 tokens each, below the model's minimum
 > cacheable length (~2048 for Haiku, ~1024 for Sonnet/Opus), so `cache_control` on them is silently
@@ -379,6 +381,15 @@ docker compose logs backend | grep llm_usage
 # {"event":"llm_usage","agent":"ReasonerAgent","cache_mode":"block",
 #  "input_tokens":120,"output_tokens":30,"cache_read_input_tokens":95,"cache_creation_input_tokens":0}
 ```
+
+> **Keeping the ReAct prefix cacheable.** The accumulated context is emitted as one `cache_control`
+> block per chunk, not one growing block. With a single growing block the cache breakpoint moves every
+> turn and matches nothing (a silent miss that re-writes the whole context at the write premium,
+> *worse* than no caching); per-chunk blocks keep the prior boundaries stable so each turn reads what
+> came before. Verified live with `scripts/demo_llama.py`: over a 4-turn loop, `cache_read` grew
+> 0 → 3.3k → 6.4k → 9.4k tokens while each turn wrote only the new ~3k, about 44% cheaper than no
+> caching (the single-block form would have been ~25% more). `scripts/probe_cache.py` reproduces the
+> A/B directly.
 
 > **Research that grew out of this project.** The caching behaviour above, in particular how
 > *switching the system prompt between loop phases* silently breaks accumulated-prefix reuse and,
