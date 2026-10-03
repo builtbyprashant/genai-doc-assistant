@@ -24,11 +24,13 @@ After FINAL, add a line:  CONFIDENCE: HIGH | MEDIUM | LOW
 Use only the provided context. If it is still insufficient after searching, give
 your best FINAL answer and note the gap."""
 
-# Per-turn instructions live in the user message, AFTER the cached CONTEXT block (D-16), so
-# the [system + QUESTION + CONTEXT] prefix is identical across turns and the growing context
-# is read from cache each turn. The whole loop — including the forced answer — uses
-# LLAMA_SYSTEM, so the synthesis turn shares the cached context with the search turns (rather
-# than a separate synthesis system, which couldn't).
+# Per-turn instructions live in the user message, AFTER the cached CONTEXT blocks (D-16), so
+# the [system + QUESTION + CONTEXT] prefix extends append-only across turns. The context is
+# emitted as one block PER CHUNK (see context_blocks), not a single growing block, so every
+# prior block boundary stays byte-identical and the already-seen context is READ from cache
+# each turn instead of missing on breakpoint drift (paper Prop. 2 vs the single-block Prop. 4).
+# The whole loop, including the forced answer, uses LLAMA_SYSTEM, so the synthesis turn shares
+# the cached context with the search turns (rather than a separate synthesis system, which could not).
 NEXT_ACTION = "Your next action:"
 FORCE_FINAL = (
     "You have used all available search turns. Reply now with your FINAL answer using ONLY "
@@ -49,6 +51,17 @@ OVERLAP_STOP_RATIO = 0.7
 # restart — matching complete()'s single automatic retry. Once a token has shipped, a failure
 # propagates (a stream can't be re-driven mid-flight). (Case 2)
 _STREAM_ATTEMPTS = 2
+
+
+def context_blocks(question: str, chunks: list[dict]) -> list[str]:
+    """The cacheable context as append-only blocks: a fixed QUESTION/CONTEXT header, then one
+    block per accumulated chunk in stable order. As new chunks are appended the prior blocks
+    stay byte-identical, so each turn's prefix extends the previous one at a preserved block
+    boundary and the already-seen context is read from cache (D-16). This multi-block form
+    avoids the single-growing-block breakpoint drift (paper Prop. 2 vs Prop. 4)."""
+    return [f"QUESTION: {question}\n\nCONTEXT:"] + [
+        f"\n\n[{c['filename']}] {c['text']}" for c in chunks
+    ]
 
 
 def run_llama_agent(question: str, store, filter_filenames=None, top_k=None, usage=None) -> dict:
@@ -91,18 +104,9 @@ def _run(question, store, filter_filenames, top_k, usage, stream):
                 added += 1
         return added
 
-    def context_text() -> str:
-        return "\n\n".join(f"[{c['filename']}] {c['text']}" for c in seen)
-
-    def cache_block() -> str:
-        # The cacheable prefix: question + accumulated context. It grows append-only as
-        # chunks are remembered, so each turn's prefix extends the previous turn's and the
-        # already-seen context is read from cache instead of re-processed (D-16).
-        return f"QUESTION: {question}\n\nCONTEXT:\n{context_text()}"
-
     def ask(instruction: str) -> str:
         return llm.complete(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
-                            usage=usage, cache_context=cache_block())
+                            usage=usage, cache_context=context_blocks(question, seen))
 
     def _stream_reply(instruction, *, always_flush):
         """Stream one turn via `llm.stream_text`, emitting answer-body tokens through the shared
@@ -116,7 +120,7 @@ def _run(question, store, filter_filenames, top_k, usage, stream):
             raw, emitted = "", False
             try:
                 for delta in llm.stream_text(LLAMA_SYSTEM, instruction, agent="LlamaReAct",
-                                             usage=usage, cache_context=cache_block()):
+                                             usage=usage, cache_context=context_blocks(question, seen)):
                     raw += delta
                     out = extractor.feed(raw)
                     if out:

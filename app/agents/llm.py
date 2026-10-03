@@ -43,29 +43,32 @@ def _cache_kwargs(system: str, cache_mode: str) -> dict:
     return {"system": [{"type": "text", "text": system, "cache_control": _EPHEMERAL}]}
 
 
-def _build_request(system: str, user: str, cache_context: Optional[str], cache_mode: str) -> dict:
+def _build_request(system: str, user: str, cache_context: "str | list[str] | None", cache_mode: str) -> dict:
     """Build the `system` + `messages` kwargs for a request (DECISIONS: D-16).
 
-    When `cache_context` is given (and caching is on), the large, stable CONTEXT becomes
-    its own `cache_control` block at the head of the user message, with the agent-specific
-    task trailing it *uncached*. Two calls that share the same system + context — e.g. the
-    Reasoner then the Validator on the same retrieved chunks — produce an identical cached
-    prefix, so the second call reads it instead of re-processing the context. (This is the
-    only structure that actually caches anything here: the system prompts are ~100 tokens,
-    far below the model's minimum cacheable length, so block-level system caching never
-    fires — D-12. The context block is where the tokens, and the reuse, actually are.)
+    When `cache_context` is given (and caching is on), the large, stable CONTEXT leads the
+    user message as one or more `text` blocks, with the agent-specific task trailing it
+    *uncached*. `cache_context` is either a single string (one cached block) or a list of
+    strings (one block each); the `cache_control` marker is placed on the LAST context block.
 
-    Falls back to the original per-system strategy when there is no large context to cache
-    (e.g. the Planner) or caching is off.
+    The list form matters for a GROWING context (the ReAct loop): emitting the accumulated
+    context as one block PER CHUNK keeps every prior block boundary byte-identical as new
+    chunks are appended, so each turn's prefix extends the previous one at a preserved
+    boundary and is read from cache. A single block that grows instead moves its only
+    breakpoint every turn and matches nothing (paper Prop. 4 vs Prop. 2). Two calls sharing
+    the same system + an identical context (Reasoner then Validator) still hit via the single
+    string form, because that one block's position is stable between them.
+
+    Falls back to the original per-system strategy when there is no context to cache (e.g.
+    the Planner) or caching is off. (System prompts are ~100 tokens, below the model's
+    minimum cacheable length, so block-level system caching never fires — D-12.)
     """
     if cache_context and cache_mode != "off":
-        return {
-            "system": system,
-            "messages": [{"role": "user", "content": [
-                {"type": "text", "text": cache_context, "cache_control": _EPHEMERAL},
-                {"type": "text", "text": user},
-            ]}],
-        }
+        blocks = [cache_context] if isinstance(cache_context, str) else list(cache_context)
+        content = [{"type": "text", "text": b} for b in blocks]
+        content[-1]["cache_control"] = _EPHEMERAL  # one marker, on the last context block
+        content.append({"type": "text", "text": user})  # agent task trails the cache, uncached
+        return {"system": system, "messages": [{"role": "user", "content": content}]}
     return {"messages": [{"role": "user", "content": user}], **_cache_kwargs(system, cache_mode)}
 
 
@@ -147,7 +150,7 @@ def get_client() -> anthropic.Anthropic:
 
 
 def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
-             usage: Optional[dict] = None, cache_context: Optional[str] = None) -> str:
+             usage: Optional[dict] = None, cache_context: "str | list[str] | None" = None) -> str:
     """Send one system+user turn to Claude, with the blanket retry policy.
 
     `agent` labels the call so a failure reports which agent it failed at. Pass
@@ -164,7 +167,7 @@ def complete(system: str, user: str, max_tokens: int = 800, agent: Optional[str]
 
 
 def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[float] = None,
-                  cache_context: Optional[str] = None):
+                  cache_context: "str | list[str] | None" = None):
     settings = get_settings()
     client = get_client()
     if timeout is not None:
@@ -179,7 +182,7 @@ def _raw_complete(system: str, user: str, max_tokens: int, timeout: Optional[flo
 
 
 def stream_text(system: str, user: str, max_tokens: int = 800, agent: Optional[str] = None,
-                usage: Optional[dict] = None, cache_context: Optional[str] = None):
+                usage: Optional[dict] = None, cache_context: "str | list[str] | None" = None):
     """Yield answer text deltas as the model generates them.
 
     Unlike `complete()`, there is no retry wrapper — a stream can't be transparently

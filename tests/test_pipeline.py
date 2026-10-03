@@ -722,6 +722,32 @@ def test_build_request_off_mode_has_no_cache_block():
     assert req["system"] == "SYS"
 
 
+def test_build_request_list_marks_only_last_context_block():
+    # Multi-block context (the ReAct loop): one block per chunk, with the marker ONLY on the
+    # last context block and the task trailing it uncached. Prior block boundaries stay intact
+    # so a growing context reads from cache (paper Prop. 2, not the single-block Prop. 4 miss).
+    req = llm._build_request("SYS", "the task", ["HEADER", "[a] one", "[b] two"], "block")
+    content = req["messages"][0]["content"]
+    assert [c["text"] for c in content] == ["HEADER", "[a] one", "[b] two", "the task"]
+    assert "cache_control" not in content[0]
+    assert "cache_control" not in content[1]
+    assert content[2]["cache_control"] == {"type": "ephemeral"}   # only the last context block
+    assert "cache_control" not in content[3]                      # task is uncached
+    assert req["system"] == "SYS"
+
+
+def test_context_blocks_are_append_only():
+    # context_blocks must preserve every prior block byte-for-byte as chunks accumulate, so the
+    # breakpoint sits at a stable boundary each turn (the fix for the ReAct loop's prefix).
+    t1 = [{"filename": "a.txt", "text": "alpha"}, {"filename": "b.txt", "text": "beta"}]
+    t2 = t1 + [{"filename": "c.txt", "text": "gamma"}]
+    b1 = llama_agent.context_blocks("q", t1)
+    b2 = llama_agent.context_blocks("q", t2)
+    assert b2[:len(b1)] == b1          # prior blocks unchanged
+    assert len(b2) == len(b1) + 1      # exactly one new block appended
+    assert b1[0] == "QUESTION: q\n\nCONTEXT:"
+
+
 def test_reasoner_and_validator_share_cached_context_prefix():
     # The win: both build the SAME (system, CONTEXT block), so the Validator reads the
     # context the Reasoner cached instead of re-processing it. (D-16)
@@ -837,8 +863,9 @@ def test_llama_stops_on_diminishing_returns(monkeypatch):
 
 
 def test_llama_caches_growing_context_prefix(monkeypatch):
-    # Every turn passes the accumulated context as cache_context, and it grows append-only
-    # so turn N+1's prefix extends turn N's → the prior context is read from cache (D-16).
+    # Every turn passes the accumulated context as append-only cache_context BLOCKS, so turn
+    # N+1's block list extends turn N's (prior blocks byte-identical) → the prior context is
+    # read from cache at a preserved block boundary (D-16; paper Prop. 2, not the Prop. 4 miss).
     captured = []
 
     def mock(system, user, **kw):
@@ -850,8 +877,9 @@ def test_llama_caches_growing_context_prefix(monkeypatch):
 
     llama_agent.run_llama_agent("q", _FreshStore())
     assert len(captured) >= 2
-    assert all(c for c in captured)                                       # all carried context
-    assert all(b.startswith(a) for a, b in zip(captured, captured[1:]))   # append-only growth
+    assert all(c for c in captured)                                   # all carried context blocks
+    # append-only: each turn's block list extends the previous, prior blocks byte-identical
+    assert all(b[:len(a)] == a for a, b in zip(captured, captured[1:]))
 
 
 def test_compare_marks_which_pipeline_was_validated(monkeypatch, indexed_store):
